@@ -1,0 +1,9 @@
+date,category,amount,unit,description
+2024-01-15,grid_electricity,500,kwh,Office electricity usage
+2024-01-20,gas_diesel_oil,100,litre,Stationary generator fuel
+2024-01-25,motor_gasoline_catalyst,50,litre,Vehicle fuel
+2024-02-01,natural_gas_mj,1500,mj,Industrial heating
+2024-02-05,lpg_kg,25,kg,Kitchen gas usage
+2024-02-10,r134a,2,kg,Air conditioning refrigerant
+2024-02-15,fuel_wood,300,kg,Biomass heating
+2024-02-20,cng,40,kg,Compressed natural gas vehicle

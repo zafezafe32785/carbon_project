@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
 import '../services/api_service.dart';
-// import 'package:flutter/material.dart';
-// import '../utils/constants.dart';
+import '../services/localization_service.dart';
+import '../utils/constants.dart';
 import 'add_emission_screen.dart';
 import 'login_screen.dart';
+import 'upload_data_screen.dart';
+import 'report_generation_screen.dart';
+import 'admin_screen.dart';
+import 'edit_request_screen.dart';
 
 class SmartDashboardScreen extends StatefulWidget {
   const SmartDashboardScreen({super.key});
@@ -17,6 +22,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   Map<String, dynamic> _dashboardData = {};
   bool _isLoading = true;
   double _monthlyTarget = 5000; // Default target
+  String _selectedScope = 'All'; // For bar chart filtering
 
   @override
   void initState() {
@@ -122,34 +128,148 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Smart Carbon Dashboard'),
-            if (!_isLoading && _dashboardData['current_year'] != null)
-              Text(
-                'Year ${_dashboardData['current_year']}',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
-              ),
-          ],
-        ),
-        backgroundColor: Colors.green[700],
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDashboardData,
+    return Consumer<LocalizationService>(
+      builder: (context, localization, child) {
+        return Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: _buildModernAppBar(localization),
+          drawer: _buildModernDrawer(localization),
+          body: _isLoading
+              ? _buildLoadingView()
+              : _dashboardData['has_data'] == false
+                  ? _buildNoDataView()
+                  : RefreshIndicator(
+                      onRefresh: _loadDashboardData,
+                      color: const Color(0xFF059669),
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Welcome Header
+                            _buildWelcomeHeader(),
+                            const SizedBox(height: 24),
+                            
+                            // Alert if exceeding target
+                            if ((_dashboardData['current_month_total'] ?? 0) > _monthlyTarget)
+                              _buildModernAlertCard(),
+                            
+                            // Quick Stats Grid
+                            _buildQuickStatsGrid(),
+                            const SizedBox(height: 24),
+                            
+                            // Charts Section
+                            _buildChartsSection(),
+                            const SizedBox(height: 24),
+                            
+                            // Category Breakdown
+                            if ((_dashboardData['category_breakdown'] as Map?)?.isNotEmpty ?? false)
+                              _buildModernCategoryBreakdown(),
+                            
+                            const SizedBox(height: 24),
+                            
+                            // Quick Actions
+                            _buildQuickActions(),
+                            
+                            const SizedBox(height: 100), // Space for FAB
+                          ],
+                        ),
+                      ),
+                    ),
+          floatingActionButton: _buildModernFAB(),
+        );
+      },
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: Colors.green[700],
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.eco, size: 60, color: Colors.white),
+                SizedBox(height: 10),
+                Text(
+                  'Carbon Accounting',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                  ),
+                ),
+                Text(
+                  'Smart Dashboard',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: _showTargetSettings,
+          ListTile(
+            leading: const Icon(Icons.dashboard),
+            title: const Text('Dashboard'),
+            selected: true,
+            selectedTileColor: Colors.green[50],
+            onTap: () {
+              Navigator.pop(context);
+            },
           ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
+          ListTile(
+            leading: const Icon(Icons.add_circle),
+            title: const Text('Add Emission'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+              ).then((_) => _loadDashboardData());
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.upload_file),
+            title: const Text('Upload Data'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => UploadDataScreen()),
+              ).then((_) => _loadDashboardData());
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.assessment),
+            title: const Text('Generate Reports'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ReportGenerationScreen()),
+              );
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.settings),
+            title: const Text('Target Settings'),
+            onTap: () {
+              Navigator.pop(context);
+              _showTargetSettings();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Logout'),
+            onTap: () async {
+              Navigator.pop(context);
               await ApiService.clearToken();
               Navigator.pushReplacement(
                 context,
@@ -158,55 +278,6 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
             },
           ),
         ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _dashboardData['has_data'] == false
-              ? _buildNoDataView()
-              : RefreshIndicator(
-                  onRefresh: _loadDashboardData,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Alert if exceeding target
-                        if ((_dashboardData['current_month_total'] ?? 0) > _monthlyTarget)
-                          _buildAlertCard(),
-                        
-                        // Summary Cards Row
-                        _buildSummaryCards(),
-                        const SizedBox(height: 20),
-                        
-                        // Year Comparison Card
-                        _buildYearComparisonCard(),
-                        const SizedBox(height: 20),
-
-                        _buildTestChart(), // Add this line
-                        const SizedBox(height: 20),
-                        
-                        // Monthly Trend Chart
-                        _buildMonthlyTrendChart(),
-                        const SizedBox(height: 20),
-                        
-                        // Category Breakdown
-                        if ((_dashboardData['category_breakdown'] as Map?)?.isNotEmpty ?? false)
-                          _buildCategoryBreakdown(),
-                      ],
-                    ),
-                  ),
-                ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
-          ).then((_) => _loadDashboardData()); // Auto refresh after adding
-        },
-        backgroundColor: Colors.green[700],
-        tooltip: 'Add Emission Data',
-        child: const Icon(Icons.add),
       ),
     );
   }
@@ -267,38 +338,42 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
 }
 
   Widget _buildNoDataView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.insert_chart_outlined, size: 100, color: Colors.grey[400]),
-          const SizedBox(height: 20),
-          Text(
-            'No emission data yet',
-            style: TextStyle(fontSize: 20, color: Colors.grey[600]),
+    return Consumer<LocalizationService>(
+      builder: (context, localization, child) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.insert_chart_outlined, size: 100, color: Colors.grey[400]),
+              const SizedBox(height: 20),
+              Text(
+                localization.noEmissionDataYet,
+                style: TextStyle(fontSize: 20, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                localization.isThaiLanguage ? 'เริ่มต้นด้วยการเพิ่มบันทึกการปล่อยครั้งแรก' : 'Start by adding your first emission record',
+                style: TextStyle(color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 30),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+                  ).then((_) => _loadDashboardData());
+                },
+                icon: const Icon(Icons.add),
+                label: Text(localization.addFirstEmission),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green[700],
+                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Start by adding your first emission record',
-            style: TextStyle(color: Colors.grey[500]),
-          ),
-          const SizedBox(height: 30),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
-              ).then((_) => _loadDashboardData());
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Add First Emission'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green[700],
-              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -742,13 +817,32 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   Widget _buildCategoryBreakdown() {
     final categoryData = _dashboardData['category_breakdown'] as Map? ?? {};
 
-    print('Category data: $categoryData'); // Add this debug line
-    
     if (categoryData.isEmpty) return const SizedBox.shrink();
-    
+
+    // Normalize and merge duplicate categories
+    final normalizedCategoryData = <String, double>{};
+    for (final entry in categoryData.entries) {
+      final value = (entry.value ?? 0).toDouble();
+      if (value > 0.01) { // Filter out very small values
+        // Normalize category key: lowercase, replace spaces/dashes/parentheses with underscores
+        String normalizedKey = entry.key.toString()
+            .toLowerCase()
+            .trim()
+            .replaceAll(RegExp(r'[-()\s]+'), '_')  // Replace all spaces, dashes, parens with underscore
+            .replaceAll(RegExp(r'_+'), '_')        // Replace multiple underscores with single
+            .replaceAll(RegExp(r'^_|_$'), '');     // Remove leading/trailing underscores
+
+        // Sum up values for the same normalized category
+        normalizedCategoryData[normalizedKey] =
+            (normalizedCategoryData[normalizedKey] ?? 0.0) + value;
+      }
+    }
+
+    if (normalizedCategoryData.isEmpty) return const SizedBox.shrink();
+
     // Calculate total for percentages
-    final total = categoryData.values.fold<double>(0, (sum, value) => sum + value);
-    
+    final total = normalizedCategoryData.values.fold<double>(0, (sum, value) => sum + value);
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -762,10 +856,11 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
-            ...categoryData.entries.map((entry) {
+            ...normalizedCategoryData.entries.map((entry) {
               final percentage = (entry.value / total * 100).toStringAsFixed(1);
               final color = _getCategoryColor(entry.key);
-              
+              final displayName = Constants.getCategoryDisplayName(entry.key);
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Column(
@@ -774,23 +869,29 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: color,
-                                borderRadius: BorderRadius.circular(2),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              entry.key.toUpperCase(),
-                              style: const TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  style: const TextStyle(fontWeight: FontWeight.w500),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           '${entry.value.toStringAsFixed(0)} kg ($percentage%)',
                           style: const TextStyle(fontWeight: FontWeight.bold),
@@ -815,16 +916,1687 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   }
 
   Color _getCategoryColor(String category) {
-    final colors = {
-      'electricity': Colors.blue,
-      'fuel': Colors.orange,
-      'diesel': Colors.orange,
-      'gasoline': Colors.deepOrange,
-      'natural_gas': Colors.red,
-      'waste': Colors.purple,
-      'transport': Colors.teal,
-    };
-    return colors[category] ?? Colors.grey;
+    // Use the Constants helper to determine scope - this handles ALL TGO categories correctly
+    final categoryLower = category.toLowerCase();
+    final scope = Constants.getCategoryScope(categoryLower);
+
+    // Scope 1 (Direct Emissions) - Green
+    if (scope == 1) {
+      return const Color(0xFF059669); // Green for Scope 1
+    }
+
+    // Scope 2 (Indirect Energy Emissions) - Blue
+    if (scope == 2) {
+      return const Color(0xFF3B82F6); // Blue for Scope 2
+    }
+
+    // Fallback: Use keyword matching for legacy/unmapped categories
+    if (_containsScope1Keywords(categoryLower)) {
+      return const Color(0xFF059669); // Green for Scope 1
+    }
+
+    if (_containsScope2Keywords(categoryLower)) {
+      return const Color(0xFF3B82F6); // Blue for Scope 2
+    }
+
+    // Default color for truly unclassified categories
+    return Colors.grey;
+  }
+
+  // Fallback keyword matching for legacy categories not in Constants
+  bool _containsScope1Keywords(String categoryName) {
+    final scope1Keywords = [
+      'fuel', 'gasoline', 'diesel', 'natural gas', 'lpg', 'coal', 'kerosene',
+      'mobile', 'vehicle', 'transport', 'combustion', 'stationary', 'biomass',
+      'bagasse', 'biogas', 'wood', 'anthracite', 'bituminous', 'lignite',
+      'refrigerant', 'fugitive', 'cng', 'heavy fuel oil', 'gas oil',
+      'equipment', 'machinery', 'agriculture', 'forestry', 'construction',
+      'r-', 'hfc', 'pfc', 'sf6', 'nf3'  // Refrigerant codes
+    ];
+
+    return scope1Keywords.any((keyword) => categoryName.contains(keyword));
+  }
+
+  // Fallback keyword matching for legacy categories not in Constants
+  bool _containsScope2Keywords(String categoryName) {
+    final scope2Keywords = [
+      'electricity', 'electric', 'grid', 'power', 'energy', 'kwh'
+    ];
+
+    return scope2Keywords.any((keyword) => categoryName.contains(keyword));
+  }
+
+  // Modern UI Components
+  PreferredSizeWidget _buildModernAppBar(LocalizationService localization) {
+    return AppBar(
+      title: Text(
+        localization.isThaiLanguage ? 'แดชบอร์ดคาร์บอน' : 'Carbon Dashboard',
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 20,
+        ),
+      ),
+      backgroundColor: const Color(0xFF059669),
+      foregroundColor: Colors.white,
+      elevation: 0,
+      centerTitle: false,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded),
+          onPressed: _loadDashboardData,
+          tooltip: localization.isThaiLanguage ? 'รีเฟรชข้อมูล' : 'Refresh Data',
+        ),
+        IconButton(
+          icon: const Icon(Icons.tune_rounded),
+          onPressed: _showTargetSettings,
+          tooltip: localization.settings,
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget _buildModernDrawer(LocalizationService localization) {
+    return Drawer(
+      child: Column(
+        children: [
+          Container(
+            height: 200,
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF059669), Color(0xFF047857)],
+              ),
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.eco_rounded,
+                        size: 32,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      localization.appTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      localization.smartDashboard,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                // Language Switcher in Sidebar
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: ListTile(
+                    leading: Icon(Icons.language, color: Colors.green[700]),
+                    title: Text(
+                      localization.isThaiLanguage ? 'เปลี่ยนภาษา' : 'Change Language',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.green[800],
+                      ),
+                    ),
+                    subtitle: Text(
+                      localization.isThaiLanguage ? 'ไทย → English' : 'English → ไทย',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green[600],
+                      ),
+                    ),
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green[700],
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        localization.isThaiLanguage ? 'EN' : 'TH',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    onTap: () {
+                      localization.toggleLanguage();
+                      _loadDashboardData(); // Refresh data after language change
+                      Navigator.pop(context); // Close drawer after selection
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                _buildDrawerItem(
+                  icon: Icons.dashboard_rounded,
+                  title: localization.smartDashboard,
+                  isSelected: true,
+                  onTap: () => Navigator.pop(context),
+                ),
+                _buildDrawerItem(
+                  icon: Icons.add_circle_rounded,
+                  title: localization.addEmission,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+                    ).then((_) => _loadDashboardData());
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.upload_file_rounded,
+                  title: localization.uploadData,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => UploadDataScreen()),
+                    ).then((_) => _loadDashboardData());
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.assessment_rounded,
+                  title: localization.generateReport,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReportGenerationScreen()),
+                    );
+                  },
+                ),
+                // Show edit/delete requests only for NON-admin users
+                if (_dashboardData['is_admin'] != true)
+                  _buildDrawerItem(
+                    icon: Icons.edit_note_rounded,
+                    title: localization.isThaiLanguage 
+                      ? 'คำขอแก้ไข/ลบข้อมูล' 
+                      : 'Edit/Delete Requests',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const EditRequestScreen()),
+                      );
+                    },
+                  ),
+                // Show admin panel only for admin users
+                if (_dashboardData['is_admin'] == true)
+                  _buildDrawerItem(
+                    icon: Icons.admin_panel_settings_rounded,
+                    title: localization.isThaiLanguage ? 'แผงผู้ดูแลระบบ' : 'Admin Panel',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AdminScreen()),
+                      );
+                    },
+                  ),
+                const Divider(height: 32),
+                _buildDrawerItem(
+                  icon: Icons.settings_rounded,
+                  title: localization.isThaiLanguage ? 'เป้าหมายรายเดือน' : 'Monthly target',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showTargetSettings();
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.logout_rounded,
+                  title: localization.isThaiLanguage ? 'ออกจากระบบ' : 'Logout',
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await ApiService.clearToken();
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isSelected = false,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color: isSelected ? const Color(0xFF059669) : Colors.grey[600],
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? const Color(0xFF059669) : Colors.grey[800],
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        selected: isSelected,
+        selectedTileColor: const Color(0xFF059669).withOpacity(0.1),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  Widget _buildLoadingView() {
+    return Consumer<LocalizationService>(
+      builder: (context, localization, child) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(
+                color: Color(0xFF059669),
+                strokeWidth: 3,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                localization.isThaiLanguage ? 'กำลังโหลดแดชบอร์ด...' : 'Loading dashboard...',
+                style: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildWelcomeHeader() {
+    final currentMonth = _dashboardData['current_month'] ?? DateTime.now().month;
+    final monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF059669), Color(0xFF047857)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF059669).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Shared Dashboard',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.people, size: 12, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            'All Users',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${monthNames[currentMonth - 1]} Overview',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _dashboardData.containsKey('total_users') && _dashboardData.containsKey('users_with_data') 
+                    ? 'Collective data from ${_dashboardData['users_with_data']}/${_dashboardData['total_users']} users'
+                    : 'View collective carbon footprint across all users',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.public,
+              size: 32,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernAlertCard() {
+    final exceeded = (_dashboardData['current_month_total'] ?? 0) - _monthlyTarget;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.red[50]!, Colors.red[100]!],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red[200]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.warning_rounded, color: Colors.red[700], size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Monthly Target Exceeded!',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red[700],
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Over target by ${exceeded.toStringAsFixed(0)} kg CO₂',
+                  style: TextStyle(color: Colors.red[600]),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickStatsGrid() {
+    final currentMonth = _dashboardData['current_month_total'] ?? 0;
+    final monthChange = _dashboardData['month_change_percentage'] ?? 0;
+    final currentYear = _dashboardData['current_year_total'] ?? 0;
+    
+    // Calculate scope totals for current month
+    final categoryData = _dashboardData['category_breakdown'] as Map? ?? {};
+    double scope1Month = 0.0;
+    double scope2Month = 0.0;
+
+    for (final entry in categoryData.entries) {
+      final categoryName = entry.key.toString().toLowerCase();
+      final value = (entry.value ?? 0).toDouble();
+
+      final scope = Constants.getCategoryScope(categoryName);
+      if (scope == 1) {
+        scope1Month += value;
+      } else if (scope == 2) {
+        scope2Month += value;
+      } else {
+        // Fallback to keyword matching for unmapped categories
+        if (_containsScope1Keywords(categoryName)) {
+          scope1Month += value;
+        } else if (_containsScope2Keywords(categoryName)) {
+          scope2Month += value;
+        } else {
+          // Default to Scope 1 for unknown categories
+          scope1Month += value;
+        }
+      }
+    }
+    
+    // Calculate scope totals for current year
+    // We'll need to get this from yearly data if available, otherwise estimate from monthly
+    final yearlyScope1 = _dashboardData['scope1_year_total'] ?? scope1Month;
+    final yearlyScope2 = _dashboardData['scope2_year_total'] ?? scope2Month;
+    
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _buildModernStatCard(
+            title: 'This Month',
+            value: '${currentMonth.toStringAsFixed(0)}',
+            unit: 'kg CO₂',
+            icon: Icons.calendar_month_rounded,
+            color: const Color(0xFF3B82F6),
+            trend: monthChange,
+          ),
+          const SizedBox(width: 12),
+          _buildModernStatCard(
+            title: 'Target Progress',
+            value: '${(currentMonth / _monthlyTarget * 100).toStringAsFixed(0)}',
+            unit: '%',
+            icon: Icons.track_changes_rounded,
+            color: currentMonth > _monthlyTarget ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+            subtitle: 'of ${_monthlyTarget.toStringAsFixed(0)} kg',
+          ),
+          const SizedBox(width: 12),
+          _buildModernStatCard(
+            title: 'Scope 1 - Month',
+            value: '${scope1Month.toStringAsFixed(0)}',
+            unit: 'kg CO₂',
+            icon: Icons.local_fire_department_rounded,
+            color: const Color(0xFF059669),
+            subtitle: 'Direct emissions',
+          ),
+          const SizedBox(width: 12),
+          _buildModernStatCard(
+            title: 'Scope 2 - Month',
+            value: '${scope2Month.toStringAsFixed(0)}',
+            unit: 'kg CO₂',
+            icon: Icons.bolt_rounded,
+            color: const Color(0xFF3B82F6),
+            subtitle: 'Energy indirect',
+          ),
+          const SizedBox(width: 12),
+          _buildModernStatCard(
+            title: 'Scope 1 - Year',
+            value: '${yearlyScope1.toStringAsFixed(0)}',
+            unit: 'kg CO₂',
+            icon: Icons.local_fire_department_rounded,
+            color: const Color(0xFF047857),
+            subtitle: 'Direct YTD',
+          ),
+          const SizedBox(width: 12),
+          _buildModernStatCard(
+            title: 'Scope 2 - Year',
+            value: '${yearlyScope2.toStringAsFixed(0)}',
+            unit: 'kg CO₂',
+            icon: Icons.bolt_rounded,
+            color: const Color(0xFF2563EB),
+            subtitle: 'Energy YTD',
+          ),
+          const SizedBox(width: 12),
+          _buildModernStatCard(
+            title: 'Year Total',
+            value: '${currentYear.toStringAsFixed(0)}',
+            unit: 'kg CO₂',
+            icon: Icons.trending_up_rounded,
+            color: const Color(0xFF8B5CF6),
+            subtitle: 'Since January',
+          ),
+          const SizedBox(width: 12),
+          _buildModernStatCard(
+            title: 'YoY Change',
+            value: '${(_dashboardData['year_change_percentage'] ?? 0).abs().toStringAsFixed(1)}',
+            unit: '%',
+            icon: (_dashboardData['year_change_percentage'] ?? 0) < 0 
+                ? Icons.arrow_downward_rounded 
+                : Icons.arrow_upward_rounded,
+            color: (_dashboardData['year_change_percentage'] ?? 0) < 0 
+                ? const Color(0xFF10B981) 
+                : const Color(0xFFEF4444),
+            subtitle: (_dashboardData['year_change_percentage'] ?? 0) < 0 
+                ? 'Decreased' 
+                : 'Increased',
+            trend: _dashboardData['year_change_percentage'] ?? 0,
+          ),
+          const SizedBox(width: 12),
+          _buildModernStatCard(
+            title: 'Records',
+            value: '${_dashboardData['record_count'] ?? 0}',
+            unit: 'entries',
+            icon: Icons.receipt_long_rounded,
+            color: const Color(0xFF06B6D4),
+            subtitle: 'This month',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernStatCard({
+    required String title,
+    required String value,
+    required String unit,
+    required IconData icon,
+    required Color color,
+    String? subtitle,
+    double? trend,
+  }) {
+    return Container(
+      width: 190,
+      height: 152, // Increased height by 2 pixels to fix overflow
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min, // Use minimum size needed
+        children: [
+          // Top row with icon and trend - flexible height
+          SizedBox(
+            height: 30, // Slightly reduced height
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color, size: 16),
+                ),
+                if (trend != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: trend > 0 ? Colors.red[50] : Colors.green[50],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${trend > 0 ? "+" : ""}${trend.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: trend > 0 ? Colors.red[600] : Colors.green[600],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 10), // Reduced spacing
+          
+          // Value and unit section - flexible but constrained
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                const SizedBox(height: 1), // Reduced spacing
+                Flexible(
+                  child: Text(
+                    unit,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey[600],
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Bottom section with title and subtitle - constrained height
+          Container(
+            height: subtitle != null ? 34 : 22, // Slightly reduced heights
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 1), // Reduced spacing
+                  Flexible(
+                    child: Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.grey[500],
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Analytics',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildMonthlyBarChart(),
+        const SizedBox(height: 16),
+        _buildScopeComparisonPieChart(),
+      ],
+    );
+  }
+
+  Widget _buildModernCategoryBreakdown() {
+    final categoryData = _dashboardData['category_breakdown'] as Map? ?? {};
+
+    if (categoryData.isEmpty) return const SizedBox.shrink();
+
+    // Normalize and merge duplicate categories
+    final normalizedCategoryData = <String, double>{};
+    for (final entry in categoryData.entries) {
+      final value = (entry.value ?? 0).toDouble();
+      if (value > 0.01) { // Filter out very small values
+        // Normalize category key: lowercase, replace spaces/dashes/parentheses with underscores
+        String normalizedKey = entry.key.toString()
+            .toLowerCase()
+            .trim()
+            .replaceAll(RegExp(r'[-()\s]+'), '_')  // Replace all spaces, dashes, parens with underscore
+            .replaceAll(RegExp(r'_+'), '_')        // Replace multiple underscores with single
+            .replaceAll(RegExp(r'^_|_$'), '');     // Remove leading/trailing underscores
+
+        // Sum up values for the same normalized category
+        normalizedCategoryData[normalizedKey] =
+            (normalizedCategoryData[normalizedKey] ?? 0.0) + value;
+      }
+    }
+
+    if (normalizedCategoryData.isEmpty) return const SizedBox.shrink();
+
+    // Calculate total for percentages using normalized data
+    final total = normalizedCategoryData.values.fold<double>(0, (sum, value) => sum + value);
+
+    // If total is 0 or negative, don't show the breakdown
+    if (total <= 0) return const SizedBox.shrink();
+    
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.pie_chart_rounded,
+                  color: Color(0xFF8B5CF6),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Emissions by Category',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          ...normalizedCategoryData.entries.map((entry) {
+            // Ensure entry.value is not negative and total is positive
+            final safeValue = entry.value < 0 ? 0.0 : entry.value.toDouble();
+            final percentage = total > 0 ? (safeValue / total * 100).toStringAsFixed(1) : '0.0';
+            final color = _getCategoryColor(entry.key);
+
+            // Calculate safe width factor (between 0.0 and 1.0)
+            double widthFactor = 0.0;
+            if (total > 0 && safeValue > 0) {
+              widthFactor = (safeValue / total).clamp(0.0, 1.0);
+            }
+
+            // Get friendly display name from Constants
+            final displayName = Constants.getCategoryDisplayName(entry.key);
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: color,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                displayName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${safeValue.toStringAsFixed(0)} kg ($percentage%)',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 8,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      color: Colors.grey[200],
+                    ),
+                    child: FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: widthFactor,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          color: color,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Quick Actions',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  title: 'Add Data',
+                  icon: Icons.add_rounded,
+                  color: const Color(0xFF059669),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+                    ).then((_) => _loadDashboardData());
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  title: 'Upload',
+                  icon: Icons.upload_rounded,
+                  color: const Color(0xFF3B82F6),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => UploadDataScreen()),
+                    ).then((_) => _loadDashboardData());
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  title: 'Reports',
+                  icon: Icons.description_rounded,
+                  color: const Color(0xFF8B5CF6),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReportGenerationScreen()),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernFAB() {
+    return FloatingActionButton.extended(
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+        ).then((_) => _loadDashboardData());
+      },
+      backgroundColor: const Color(0xFF059669),
+      foregroundColor: Colors.white,
+      elevation: 8,
+      icon: const Icon(Icons.add_rounded),
+      label: const Text(
+        'Add Emission',
+        style: TextStyle(fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _buildMonthlyBarChart() {
+    // Use actual data from dashboard or show empty state
+    final monthlyData = _dashboardData['monthly_trend'] as List? ?? [];
+    final lastYearData = _dashboardData['last_year_trend'] as List? ?? [];
+    final hasCurrentYearData = monthlyData.any((m) => (m['total'] ?? 0) > 0);
+    final hasLastYearData = lastYearData.any((m) => (m['total'] ?? 0) > 0);
+    
+    // If no data, show empty state
+    if (!hasCurrentYearData && !hasLastYearData) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF059669).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.show_chart_rounded,
+                    color: Color(0xFF059669),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Monthly Comparison (${DateTime.now().year} vs ${DateTime.now().year - 1})',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 40),
+            Center(
+              child: Column(
+                children: [
+                  Icon(Icons.show_chart, size: 60, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No emission data available',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add emission records to see monthly trends',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 40),
+          ],
+        ),
+      );
+    }
+
+    // Create flat line chart data showing actual data or zeros
+    List<LineChartBarData> lineBarsData = [];
+    
+    if (hasCurrentYearData) {
+      lineBarsData.add(
+        LineChartBarData(
+          spots: monthlyData.asMap().entries.map((entry) {
+            return FlSpot(entry.key.toDouble(), (entry.value['total'] ?? 0).toDouble());
+          }).toList(),
+          isCurved: true,
+          color: const Color(0xFF059669),
+          barWidth: 3,
+          dotData: const FlDotData(show: true),
+          belowBarData: BarAreaData(
+            show: true,
+            color: const Color(0xFF059669).withOpacity(0.1),
+          ),
+        ),
+      );
+    }
+    
+    if (hasLastYearData) {
+      lineBarsData.add(
+        LineChartBarData(
+          spots: lastYearData.asMap().entries.map((entry) {
+            return FlSpot(entry.key.toDouble(), (entry.value['total'] ?? 0).toDouble());
+          }).toList(),
+          isCurved: true,
+          color: const Color(0xFF6B7280),
+          barWidth: 2,
+          dashArray: [5, 5],
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(show: false),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF059669).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.show_chart_rounded,
+                  color: Color(0xFF059669),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Monthly Comparison (${DateTime.now().year} vs ${DateTime.now().year - 1})',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          // Legend for year comparison
+          Row(
+            children: [
+              // This Year
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF059669),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('${DateTime.now().year} Total', style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+              const SizedBox(width: 24),
+              // Last Year
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 16,
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6B7280),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('${DateTime.now().year - 1} Total', style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          // Line Chart
+          SizedBox(
+            height: 250,
+            child: LineChart(
+              LineChartData(
+                maxY: 10000,
+                minY: 0,
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(
+                      color: Colors.grey[300]!,
+                      strokeWidth: 1,
+                    );
+                  },
+                ),
+                titlesData: FlTitlesData(
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 40,
+                      getTitlesWidget: (value, meta) {
+                        return Text('${value.toInt()}', style: const TextStyle(fontSize: 10));
+                      },
+                    ),
+                  ),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      getTitlesWidget: (value, meta) {
+                        const months = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+                        if (value.toInt() >= 0 && value.toInt() < months.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              months[value.toInt()],
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          );
+                        }
+                        return const Text('');
+                      },
+                    ),
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                lineBarsData: lineBarsData,
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    tooltipBgColor: Colors.grey[800]!,
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        final month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][spot.x.toInt()];
+                        final isCurrentYear = spot.barIndex == 0;
+                        final year = isCurrentYear ? DateTime.now().year : DateTime.now().year - 1;
+                        
+                        return LineTooltipItem(
+                          '$month $year\nTotal: ${spot.y.toStringAsFixed(0)} kg CO₂',
+                          const TextStyle(color: Colors.white, fontSize: 12),
+                        );
+                      }).toList();
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScopeComparisonPieChart() {
+    // Calculate scope totals from category breakdown using scope categorization
+    final categoryData = _dashboardData['category_breakdown'] as Map? ?? {};
+    
+    double scope1Total = 0.0;
+    double scope2Total = 0.0;
+    
+    // Categorize emissions by scope based on category names and TGO structure
+    for (final entry in categoryData.entries) {
+      final categoryName = entry.key.toString().toLowerCase();
+      final value = (entry.value ?? 0).toDouble();
+
+      final scope = Constants.getCategoryScope(categoryName);
+      if (scope == 1) {
+        scope1Total += value;
+      } else if (scope == 2) {
+        scope2Total += value;
+      } else {
+        // Fallback to keyword matching for unmapped categories
+        if (_containsScope2Keywords(categoryName)) {
+          scope2Total += value;
+        } else if (_containsScope1Keywords(categoryName)) {
+          scope1Total += value;
+        } else {
+          // Default: Most emissions are Scope 1 unless specifically electricity
+          if (categoryName.contains('electric') || categoryName.contains('grid') || categoryName.contains('power')) {
+            scope2Total += value;
+          } else {
+            scope1Total += value;
+          }
+        }
+      }
+    }
+    
+    final total = scope1Total + scope2Total;
+    
+    // If no data, show empty gray pie chart
+    if (total <= 0) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.pie_chart_rounded,
+                    color: Color(0xFF8B5CF6),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Scope Comparison',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            
+            Row(
+              children: [
+                // Empty Gray Pie Chart
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 200,
+                    child: PieChart(
+                      PieChartData(
+                        sectionsSpace: 0,
+                        centerSpaceRadius: 40,
+                        sections: [
+                          PieChartSectionData(
+                            color: Colors.grey[300]!,
+                            value: 100,
+                            title: '',
+                            radius: 60,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // Empty State Message
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.pie_chart_outline, size: 48, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No scope data available',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Add emission records to see scope breakdown',
+                        style: TextStyle(
+                          color: Colors.grey[500],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+    
+    final scope1Percentage = (scope1Total / total * 100);
+    final scope2Percentage = (scope2Total / total * 100);
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.pie_chart_rounded,
+                  color: Color(0xFF8B5CF6),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Scope Comparison',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          Row(
+            children: [
+              // Pie Chart
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: 200,
+                  child: PieChart(
+                    PieChartData(
+                      sectionsSpace: 2,
+                      centerSpaceRadius: 40,
+                      sections: [
+                        PieChartSectionData(
+                          color: const Color(0xFF059669),
+                          value: scope1Total,
+                          title: '${scope1Percentage.toStringAsFixed(1)}%',
+                          radius: 60,
+                          titleStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        PieChartSectionData(
+                          color: const Color(0xFF3B82F6),
+                          value: scope2Total,
+                          title: '${scope2Percentage.toStringAsFixed(1)}%',
+                          radius: 60,
+                          titleStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              
+              // Legend and Details
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildScopeItem(
+                      'Scope 1',
+                      'Direct Emissions',
+                      scope1Total,
+                      scope1Percentage,
+                      const Color(0xFF059669),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildScopeItem(
+                      'Scope 2',
+                      'Indirect Energy',
+                      scope2Total,
+                      scope2Percentage,
+                      const Color(0xFF3B82F6),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Total Emissions',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          Text(
+                            '${total.toStringAsFixed(0)} kg CO₂eq',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScopeItem(String title, String subtitle, double value, double percentage, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${value.toStringAsFixed(0)} kg',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            Text(
+              '${percentage.toStringAsFixed(1)}%',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 
   void _showTargetSettings() {
@@ -833,18 +2605,31 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Set Monthly Target'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.track_changes_rounded, color: Color(0xFF059669)),
+            SizedBox(width: 8),
+            Text('Set Monthly Target'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Current target: ${_monthlyTarget.toStringAsFixed(0)} kg CO₂'),
+            Text(
+              'Current target: ${_monthlyTarget.toStringAsFixed(0)} kg CO₂',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'New Target (kg CO₂)',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.flag_rounded),
               ),
             ),
           ],
@@ -865,22 +2650,28 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Target updated to ${_monthlyTarget.toStringAsFixed(0)} kg'),
+                    backgroundColor: const Color(0xFF059669),
                   ),
                 );
-             } else {
-               ScaffoldMessenger.of(context).showSnackBar(
-                 const SnackBar(
-                   content: Text('Please enter a valid target'),
-                   backgroundColor: Colors.red,
-                 ),
-               );
-             }
-           },
-           child: const Text('Save'),
-         ),
-       ],
-     ),
-   );
- }
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid target'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF059669),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
 }
-

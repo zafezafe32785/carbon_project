@@ -2,18 +2,15 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_pymongo import PyMongo
 from bson import ObjectId
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from functools import wraps
 from config import Config
-from models import db, users_collection, emission_records_collection, emission_factors_collection, reports_collection, audits_collection, calculate_co2_equivalent
+from models import db, users_collection, emission_records_collection, emission_factors_collection, reports_collection, audits_collection, edit_requests_collection, calculate_co2_equivalent
 import pandas as pd
-from datetime import datetime, timedelta
-# import openai  # For AI text generation
-# from reportlab.lib.pagesizes import A4
-# from reportlab.pdfgen import canvas
+from report_generator import generate_ai_report, get_available_report_formats, get_available_file_types, get_available_languages, validate_report_request
 import cv2
 import numpy as np
 import pytesseract
@@ -38,8 +35,18 @@ app.config.from_object(Config)
 # Initialize PyMongo
 mongo = PyMongo(app)
 
-# Enable CORS
-CORS(app, origins=["*"], allow_headers=["Content-Type", "Authorization"])
+# Enable CORS with specific configuration
+CORS(app, origins=["*"], allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "OPTIONS"])
+
+# Global OPTIONS handler for all routes
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({'status': 'ok'})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "Content-Type,Authorization")
+        response.headers.add('Access-Control-Allow-Methods', "GET,POST,OPTIONS")
+        return response
 
 # Create upload folder if it doesn't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -51,38 +58,36 @@ class ThaiElectricityBillOCR:
         # Configure Tesseract for optimal Thai + English recognition
         self.tesseract_config = '--oem 3 --psm 6 -l tha+eng'
         
-        # Bill format patterns - multiple formats supported
+        # Bill format patterns
         self.bill_patterns = {
-    # Format 1: Metropolitan Electricity Authority (MEA)
-    'mea': {
-        'usage_keywords': ['จำนวนหน่วย', 'จํานวนหน่วย'],
-        'amount_keywords': ['รวมเงินที่ต้องชำระทั้งสิ้น', 'รวมเงิน'],
-        'period_keywords': ['ประจำเดือน', 'ประจ.เดือน'],
-        'meter_current': ['เลขอ่านครั้งนี้', 'ครั้งนี้'],
-        'meter_previous': ['เลขอ่านครั้งที่แล้ว', 'ครั้งที่แล้ว']
-    },
-    # Format 2: Provincial Electricity Authority (PEA)
-    'pea': {
-        'usage_keywords': ['จำนวนที่ใช้', 'จํานวนที่ใช้', 'หน่วยที่ใช้'],
-        'amount_keywords': ['รวมเงินที่ต้องชำระ', 'Amount', 'รวมเงิน'],
-        'period_keywords': ['ประจำเดือน', 'ประจ.เดือน', 'Bill Period'],
-        'meter_current': ['เลขอ่านปัจจุบัน', 'Current Reading'],
-        'meter_previous': ['เลขอ่านครั้งก่อน', 'Previous Reading']
-    }
-}
-
-        # Enhanced text corrections for common OCR errors
+            'mea': {
+                'usage_keywords': ['จำนวนหน่วย', 'จํานวนหน่วย'],
+                'amount_keywords': ['รวมเงินที่ต้องชำระทั้งสิ้น', 'รวมเงิน'],
+                'period_keywords': ['ประจำเดือน', 'ประจ.เดือน'],
+                'meter_current': ['เลขอ่านครั้งนี้', 'ครั้งนี้'],
+                'meter_previous': ['เลขอ่านครั้งที่แล้ว', 'ครั้งที่แล้ว']
+            },
+            'pea': {
+                'usage_keywords': ['จำนวนที่ใช้', 'จํานวนที่ใช้', 'หน่วยที่ใช้'],
+                'amount_keywords': ['รวมเงินที่ต้องชำระ', 'Amount', 'รวมเงิน'],
+                'period_keywords': ['ประจำเดือน', 'ประจ.เดือน', 'Bill Period'],
+                'meter_current': ['เลขอ่านปัจจุบัน', 'Current Reading'],
+                'meter_previous': ['เลขอ่านครั้งก่อน', 'Previous Reading']
+            }
+        }
+        
+        # Text corrections for common OCR errors
         self.text_corrections = {
-        # Thai text corrections
-        'จํานวน': 'จำนวน',
-        'ประจา': 'ประจำ',
-        'เดนอน': 'เดือน',
-        'เตือน': 'เดือน',
-        'หนวย': 'หน่วย',
-        'รวม': 'รวม',
-        'เงนิ': 'เงิน',
-        'ชาระ': 'ชำระ',
-        'ทั้งสิน': 'ทั้งสิ้น',
+            'จํานวน': 'จำนวน',
+            'ประจา': 'ประจำ',
+            'เดอน': 'เดือน',
+            'เตือน': 'เดือน',
+            'หนวย': 'หน่วย',
+            'รวม': 'รวม',
+            'เงน': 'เงิน',
+            'ชาระ': 'ชำระ',
+            'ทั้งสน': 'ทั้งสิ้น',
+        
         
         # Number corrections
         'O': '0',
@@ -99,51 +104,86 @@ class ThaiElectricityBillOCR:
         'ู': 'ู',
     }
 
-    def preprocess_image(self, image_bytes: bytes) -> np.ndarray:
-        """Advanced image preprocessing for better OCR accuracy"""
+    def detect_table_region(self, image: np.ndarray) -> Optional[np.ndarray]:
+        """Detect and crop table region - IMPROVED to capture full table"""
         try:
-            # Convert bytes to numpy array
+            height, width = image.shape[:2]
+            
+            # Strategy: Capture top 30-35% instead of 20% to ensure we get the full usage table
+            # Thai electricity bills have the main data table in the upper portion
+            # 20% was too aggressive and cut off numbers
+            top_region = image[0:int(height * 0.35), :]
+            
+            print(f"Cropping to top 35% of image: {top_region.shape[1]}x{top_region.shape[0]}")
+            return top_region
+            
+        except Exception as e:
+            print(f"Table detection failed: {str(e)}, using full image")
+            return None
+
+    def preprocess_image(self, image_bytes: bytes) -> np.ndarray:
+        """Enhanced preprocessing - AUTO-DETECT if image is already cropped or full bill"""
+        try:
             nparr = np.frombuffer(image_bytes, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
             if image is None:
                 raise ValueError("Could not decode image")
             
-            # Resize if image is too small or too large
             height, width = image.shape[:2]
-            if width < 800:
-                scale = 800 / width
-                new_width = int(width * scale)
-                new_height = int(height * scale)
-                image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-            elif width > 2000:
+            print(f"Original image size: {width}x{height}")
+            
+            # DETECT: Is this already a cropped table or a full bill?
+            aspect_ratio = height / width
+            print(f"Aspect ratio: {aspect_ratio:.2f}")
+            
+            if aspect_ratio < 0.5:
+                print("✓ Detected: Pre-cropped table image")
+                processed_image = image
+            else:
+                print("✓ Detected: Full bill image - cropping to table region")
+                table_region = image[0:int(height * 0.30), :]
+                processed_image = table_region
+                print(f"  Cropped to: {processed_image.shape[1]}x{processed_image.shape[0]}")
+            
+            # Resize to optimal OCR size
+            height, width = processed_image.shape[:2]
+            if width < 2000:
                 scale = 2000 / width
                 new_width = int(width * scale)
                 new_height = int(height * scale)
-                image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                processed_image = cv2.resize(processed_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+                print(f"Upscaled to: {new_width}x{new_height}")
+            elif width > 3500:
+                scale = 3000 / width
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                processed_image = cv2.resize(processed_image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                print(f"Downscaled to: {new_width}x{new_height}")
             
             # Convert to grayscale
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(processed_image, cv2.COLOR_BGR2GRAY)
             
-            # Advanced noise reduction
-            denoised = cv2.fastNlMeansDenoising(gray)
+            # Denoise
+            denoised = cv2.fastNlMeansDenoising(gray, h=8)
             
-            # Enhance contrast with adaptive CLAHE
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            # Enhance contrast
+            clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
             enhanced = clahe.apply(denoised)
             
-            # Adaptive thresholding for better text extraction
+            # Sharpen
+            kernel_sharpen = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
+            sharpened = cv2.filter2D(enhanced, -1, kernel_sharpen)
+            
+            # Adaptive threshold
             binary = cv2.adaptiveThreshold(
-                enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY, 11, 2
+                sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv2.THRESH_BINARY, 15, 5
             )
             
-            # Morphological operations to clean up text
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
-            cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-            
-            # Final smoothing
-            result = cv2.medianBlur(cleaned, 3)
+            # Clean up
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+            result = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
             
             return result
             
@@ -222,26 +262,124 @@ class ThaiElectricityBillOCR:
                 return 'mea'  # Default to MEA format
 
     def extract_usage_amount(self, text: str, bill_format: str) -> Optional[float]:
-        """Extract electricity usage with multiple keyword support"""
-        patterns = self.bill_patterns[bill_format]['usage_keywords']
+        """Extract usage - OPTIMIZED for clear table images"""
         
-        for keyword in patterns:
-            # Try different number extraction patterns after the keyword
-            usage_patterns = [
-                rf'{re.escape(keyword)}\s*(\d+(?:\.\d+)?)',  # keyword followed by number
-                rf'{re.escape(keyword)}[^\d]*(\d+(?:\.\d+)?)',  # keyword with some text then number
-                rf'{re.escape(keyword)}.*?(\d+(?:\.\d+)?)\s*(?:kWh|หน่วย|kwh)',  # keyword...number unit
-            ]
+        print(f"\n=== Extracting Usage Amount ===")
+        print(f"Full text:\n{text}\n{'='*50}\n")
+        
+        # For clear zoomed table images, the structure is very predictable:
+        # Header row: วันที่จดเลขอ่าน | เลขอ่านครั้งหลัง | เลขอ่านครั้งก่อน | จำนวนหน่วย | ตัวคูณ
+        # Data row:   12/04/68 09:59  | 69601           | 68211           | 1390      | 1.2
+        
+        lines = text.split('\n')
+        
+        # STRATEGY 1: Find the header with "จำนวนหน่วย" and extract from table structure
+        usage_keywords = ['จำนวนหน่วย', 'จํานวนหน่วย', 'kWh', 'kwh']
+        
+        for line_idx, line in enumerate(lines):
+            # Skip very short lines
+            if len(line.strip()) < 5:
+                continue
             
-            for pattern in usage_patterns:
-                match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-                if match:
+            # Check if this line contains usage keyword
+            has_keyword = any(kw in line for kw in usage_keywords)
+            if not has_keyword:
+                continue
+            
+            print(f"Line {line_idx} (has keyword): {line}")
+            
+            # This is likely the header row
+            # The data should be in the SAME line (if table collapsed) or NEXT line
+            
+            # Extract all 3-5 digit numbers from this line and next few lines
+            search_lines = lines[line_idx:min(line_idx + 3, len(lines))]
+            
+            for search_idx, search_line in enumerate(search_lines):
+                print(f"  Searching line {line_idx + search_idx}: {search_line[:100]}")
+                
+                # Find all numbers that could be usage (3-5 digits)
+                numbers = re.findall(r'\b(\d{3,5})\b', search_line)
+                
+                for num_str in numbers:
                     try:
-                        return float(match.group(1))
+                        value = float(num_str)
+                        print(f"    Candidate: {value}")
+                        
+                        # Validate
+                        # Skip dates (day/month are <= 31/12)
+                        if value <= 31:
+                            print(f"      ✗ Skip (too small - likely date)")
+                            continue
+                        
+                        # Skip years
+                        if (1900 <= value <= 2100) or (2400 <= value <= 2700):
+                            print(f"      ✗ Skip (year range)")
+                            continue
+                        
+                        # Skip meter readings (typically 5 digits starting with 6-9)
+                        # 69601, 68211 are meter readings, not usage
+                        if value >= 60000 and len(num_str) == 5:
+                            print(f"      ✗ Skip (meter reading)")
+                            continue
+                        
+                        # Must be in realistic usage range
+                        if not (50 <= value <= 50000):
+                            print(f"      ✗ Skip (outside usage range)")
+                            continue
+                        
+                        # PASSED all checks
+                        print(f"    ✓ ACCEPTED: {value} kWh")
+                        return value
+                        
                     except ValueError:
-                        continue
+                        pass
         
+        # STRATEGY 2: Fallback - look for the pattern more broadly
+        print("\nFallback: Pattern matching across full text...")
+        
+        # Common patterns in Thai bills
+        patterns = [
+            r'จำนวนหน่วย[^\d]{0,30}(\d{3,5})\b',  # จำนวนหน่วย ... 1390
+            r'kWh[^\d]{0,20}(\d{3,5})\b',          # kWh ... 1390
+            r'\(kWh\)[^\d]{0,20}(\d{3,5})\b',      # (kWh) ... 1390
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                try:
+                    value = float(match.group(1))
+                    if 50 <= value <= 50000:
+                        print(f"  ✓ Pattern match: {value} kWh")
+                        return value
+                except ValueError:
+                    pass
+        
+        # STRATEGY 3: Last resort - find ANY valid usage number
+        print("\nLast resort: Finding any valid usage number...")
+        all_numbers = re.findall(r'\b(\d{3,5})\b', text)
+        
+        for num_str in all_numbers:
+            try:
+                value = float(num_str)
+                if (100 <= value <= 10000 and 
+                    not (1900 <= value <= 2100) and 
+                    not (2400 <= value <= 2700) and
+                    value not in [60000, 70000, 80000, 90000]):  # Not meter readings
+                    print(f"  ✓ Last resort found: {value} kWh")
+                    return value
+            except ValueError:
+                pass
+        
+        print("  ✗ No valid usage found")
         return None
+
+
+def detect_table_region(self, image: np.ndarray) -> Optional[np.ndarray]:
+    """Detect table region - DISABLED for pre-cropped images"""
+    # This method is now handled in preprocess_image
+    # Return None to use original image
+    return None
 
     def extract_bill_period(self, text: str, bill_format: str) -> Optional[Dict[str, int]]:
         """Extract billing period (month/year)"""
@@ -428,6 +566,7 @@ class ThaiElectricityBillOCR:
             }
             
         except Exception as e:
+            print(f"OCR processing error: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -437,98 +576,245 @@ class ThaiElectricityBillOCR:
 # Flask integration function
 
 def process_image_ocr(file, user_id):
-    """Use simplified OCR for now"""
-    return process_image_ocr_simple(file, user_id)
-
-# def process_image_ocr_simple(file, user_id):
-#     """Simplified OCR processing for testing"""
-#     try:
-#         print("Starting simple OCR processing...")
+    """Process Thai electricity bill using advanced OCR"""
+    try:
+        print("Starting OCR processing for Thai electricity bill...")
         
-#         # Save file temporarily for processing
-#         import tempfile
-#         import os
+        file_content = file.read()
+        file.seek(0)
         
-#         with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
-#             file.save(tmp_file.name)
+        ocr_processor = ThaiElectricityBillOCR()
+        result = ocr_processor.process_bill(file_content)
+        
+        if result['success']:
+            extracted_data = result['data']
+            usage_kwh = extracted_data.get('usage_kwh')
             
-#             # Basic OCR extraction
-#             from PIL import Image
-#             import pytesseract
-            
-#             image = Image.open(tmp_file.name)
-#             text = pytesseract.image_to_string(image, lang='tha+eng')
-            
-#             print(f"Extracted text: {text[:200]}...")
-            
-#             # Simple number extraction
-#             import re
-#             numbers = re.findall(r'\d+(?:\.\d+)?', text)
-#             print(f"Found numbers: {numbers}")
-            
-#             # Clean up
-#             os.unlink(tmp_file.name)
-            
-#             if numbers:
-#                 # Take the largest reasonable number as usage
-#                 reasonable_numbers = [float(n) for n in numbers if 10 <= float(n) <= 10000]
+            if usage_kwh:
+                from datetime import datetime
+                now = datetime.now()
                 
-#                 if reasonable_numbers:
-#                     usage = max(reasonable_numbers)
-                    
-#                     # Create emission record
-#                     from datetime import datetime
-#                     now = datetime.now()
-                    
-#                     co2_equivalent = usage * 0.233  # Thailand grid factor
-                    
-#                     emission_record = {
-#                         'record_id': generate_record_id(),
-#                         'user_id': user_id,
-#                         'category': 'electricity',
-#                         'emission_type': 'electricity',
-#                         'amount': usage,
-#                         'unit': 'kWh',
-#                         'month': now.month,
-#                         'year': now.year,
-#                         'emission_factor': 0.233,
-#                         'co2_equivalent': co2_equivalent,
-#                         'calculated_emission': co2_equivalent,
-#                         'import_time': datetime.utcnow(),
-#                         'record_date': datetime(now.year, now.month, 1),
-#                         'created_at': datetime.utcnow(),
-#                         'source': 'ocr_simple',
-#                         'extracted_text': text[:500]  # Store first 500 chars
-#                     }
-                    
-#                     emission_records_collection.insert_one(emission_record)
-                    
-#                     return {
-#                         'success': True,
-#                         'message': f'Successfully extracted {usage} kWh from image',
-#                         'usage_kwh': usage,
-#                         'co2_equivalent': co2_equivalent,
-#                         'record_id': emission_record['record_id']
-#                     }
+                # Get the READING date from OCR
+                bill_month = extracted_data.get('month', now.month)
+                bill_year = extracted_data.get('year', now.year)
+                
+                print(f"\n=== Bill Date Processing ===")
+                print(f"Reading date from bill: {bill_month:02d}/{bill_year}")
+                
+                # CRITICAL: Subtract 1 month for actual usage period
+                # Bill reading date shows NEXT month, but covers PREVIOUS month's usage
+                # Example: Reading date 04/2025 (April) = Usage period 03/2025 (March)
+                actual_month = bill_month - 1
+                actual_year = bill_year
+                
+                # Handle year boundary
+                if actual_month < 1:
+                    actual_month = 12
+                    actual_year = bill_year - 1
+                
+                print(f"Actual usage period: {actual_month:02d}/{actual_year}")
+                print(f"===========================\n")
+                
+                # Use TGO Thailand Grid Mix Electricity emission factor
+                emission_factor = 0.4999  # kg CO2 per kWh
+                co2_equivalent = usage_kwh * emission_factor
+                
+                emission_record = {
+                    'record_id': generate_record_id(),
+                    'user_id': user_id,
+                    'category': 'grid_electricity',
+                    'emission_type': 'grid_electricity',
+                    'amount': usage_kwh,
+                    'unit': 'kWh',
+                    'month': actual_month,  # Usage month (reading month - 1)
+                    'year': actual_year,    # Usage year
+                    'emission_factor': emission_factor,
+                    'co2_equivalent': co2_equivalent,
+                    'calculated_emission': co2_equivalent,
+                    'import_time': datetime.now(timezone.utc),
+                    'record_date': datetime(actual_year, actual_month, 1),
+                    'created_at': datetime.now(timezone.utc),
+                    'source': 'ocr_advanced',
+                    'extracted_text': result.get('raw_text', '')[:500],
+                    'ocr_confidence': extracted_data.get('ocr_confidence', 0),
+                    'bill_format': extracted_data.get('bill_format', 'unknown'),
+                    'total_amount': extracted_data.get('total_amount'),
+                    'bill_reading_date': f"{bill_month:02d}/{bill_year}",  # Original reading date
+                    'usage_period': f"{actual_month:02d}/{actual_year}"    # Actual usage period
+                }
+                
+                emission_records_collection.insert_one(emission_record)
+                
+                return {
+                    'success': True,
+                    'message': f'Successfully extracted {usage_kwh} kWh (Usage: {actual_month:02d}/{actual_year}, Reading: {bill_month:02d}/{bill_year})',
+                    'usage_kwh': usage_kwh,
+                    'co2_equivalent': round(co2_equivalent, 2),
+                    'emission_factor': emission_factor,
+                    'record_id': emission_record['record_id'],
+                    'bill_format': extracted_data.get('bill_format'),
+                    'ocr_confidence': extracted_data.get('ocr_confidence'),
+                    'bill_reading_date': f"{bill_month:02d}/{bill_year}",
+                    'usage_period': f"{actual_month:02d}/{actual_year}",
+                    'total_amount': extracted_data.get('total_amount')
+                }
+        
+        return process_image_ocr_simple(file, user_id)
+        
+    except Exception as e:
+        print(f"Advanced OCR error: {str(e)}")
+        return process_image_ocr_simple(file, user_id)
+
+def process_image_ocr_simple(file, user_id):
+    """Simplified OCR processing fallback - IMPROVED with correct response format"""
+    try:
+        print("Starting simple OCR processing...")
+        
+        import tempfile
+        import os
+        
+        tmp_file_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                tmp_file_path = tmp_file.name
+                file.save(tmp_file_path)
             
-#             return {
-#                 'success': False,
-#                 'message': 'Could not extract electricity usage from image',
-#                 'extracted_text': text[:200],
-#                 'numbers_found': numbers
-#             }
+            from PIL import Image
+            import pytesseract
             
-#     except Exception as e:
-#         print(f"Simple OCR error: {str(e)}")
-#         return {
-#             'success': False,
-#             'message': f'OCR processing failed: {str(e)}'
-#         }
+            with Image.open(tmp_file_path) as image:
+                text = pytesseract.image_to_string(image, lang='tha+eng')
+            
+            print(f"Extracted text: {text[:200]}...")
+            
+            # Look for usage keywords in the text
+            usage_keywords = ['จำนวนหน่วย', 'จํานวนหน่วย', 'หน่วย', 'kWh', 'kwh']
+            
+            # Split into lines
+            lines = text.split('\n')
+            
+            for line in lines:
+                # Check if line has usage keyword
+                has_keyword = any(kw in line for kw in usage_keywords)
+                if not has_keyword:
+                    continue
+                
+                print(f"Found usage line: {line}")
+                
+                # Extract numbers from this line
+                numbers = re.findall(r'\d+(?:,\d{3})*', line)
+                
+                for num_str in numbers:
+                    try:
+                        value = float(num_str.replace(',', ''))
+                        
+                        # Validate
+                        if 50 <= value <= 100000:
+                            # Not a year
+                            if not (1900 <= value <= 2100 or 2400 <= value <= 2700):
+                                print(f"Simple OCR found: {value} kWh")
+                                
+                                # Create emission record with month-1 logic
+                                from datetime import datetime
+                                now = datetime.now()
+                                actual_month = now.month - 1
+                                actual_year = now.year
+                                
+                                if actual_month < 1:
+                                    actual_month = 12
+                                    actual_year = now.year - 1
+                                
+                                emission_factor = 0.4999
+                                co2_equivalent = value * emission_factor
+                                
+                                emission_record = {
+                                    'record_id': generate_record_id(),
+                                    'user_id': user_id,
+                                    'category': 'grid_electricity',
+                                    'emission_type': 'grid_electricity',
+                                    'amount': value,
+                                    'unit': 'kWh',
+                                    'month': actual_month,
+                                    'year': actual_year,
+                                    'emission_factor': emission_factor,
+                                    'co2_equivalent': co2_equivalent,
+                                    'calculated_emission': co2_equivalent,
+                                    'import_time': datetime.now(timezone.utc),
+                                    'record_date': datetime(actual_year, actual_month, 1),
+                                    'created_at': datetime.now(timezone.utc),
+                                    'source': 'ocr_simple',
+                                    'extracted_text': text[:500]
+                                }
+                                
+                                emission_records_collection.insert_one(emission_record)
+                                
+                                # FIXED: Return in the same format as advanced OCR
+                                return {
+                                    'success': True,
+                                    'message': f'Successfully extracted {value} kWh from image (Simple OCR)',
+                                    'usage_kwh': value,
+                                    'co2_equivalent': round(co2_equivalent, 2),
+                                    'emission_factor': emission_factor,
+                                    'record_id': emission_record['record_id'],
+                                    'usage_period': f"{actual_month:02d}/{actual_year}",
+                                    # ADD: extracted_data field for Flutter compatibility
+                                    'extracted_data': {
+                                        'usage_kwh': value,
+                                        'bill_format': 'app_screenshot',
+                                        'ocr_confidence': 0
+                                    }
+                                }
+                    except ValueError:
+                        continue
+            
+            return {
+                'success': False,
+                'message': 'Could not extract electricity usage from image',
+                'extracted_text': text[:200]
+            }
+            
+        finally:
+            if tmp_file_path and os.path.exists(tmp_file_path):
+                try:
+                    os.unlink(tmp_file_path)
+                    print(f"Cleaned up temporary file: {tmp_file_path}")
+                except Exception as e:
+                    print(f"Warning: Could not delete temp file: {e}")
+            
+    except Exception as e:
+        print(f"Simple OCR error: {str(e)}")
+        return {
+            'success': False,
+            'message': f'OCR processing failed: {str(e)}'
+        }
+
+def process_pdf_bill(file, user_id):
+    """Process PDF electricity bills"""
+    try:
+        print("Starting PDF processing...")
+        
+        # For now, return a not implemented message
+        # You can implement PDF processing using libraries like PyPDF2 or pdfplumber
+        return {
+            'success': False,
+            'message': 'PDF processing not yet implemented. Please use image files (.jpg, .png) for now.'
+        }
+        
+    except Exception as e:
+        print(f"PDF processing error: {str(e)}")
+        return {
+            'success': False,
+            'message': f'PDF processing failed: {str(e)}'
+        }
 
 # JWT decorator for protected routes
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Handle CORS preflight requests
+        if request.method == 'OPTIONS':
+            return jsonify({'status': 'ok'}), 200
+            
         token = request.headers.get('Authorization')
         
         if not token:
@@ -691,9 +977,9 @@ def process_spreadsheet(file, user_id):
                     'emission_factor': 0,  # Will be calculated in calculate_co2_equivalent
                     'co2_equivalent': co2_equivalent,
                     'calculated_emission': co2_equivalent,
-                    'import_time': datetime.utcnow(),
+                    'import_time': datetime.now(timezone.utc),
                     'record_date': date_obj,
-                    'created_at': datetime.utcnow(),
+                    'created_at': datetime.now(timezone.utc),
                     'source': 'spreadsheet'
                 }
                 
@@ -738,7 +1024,11 @@ def home():
             },
             'reports': {
                 'create': '/api/reports [POST]',
-                'get': '/api/reports [GET]'
+                'get': '/api/reports [GET]',
+                'formats': '/api/reports/formats [GET]',
+                'preview': '/api/reports/preview [POST]',
+                'generate-ai': '/api/reports/generate-ai [POST]',
+                'download': '/api/reports/download/<report_id> [GET]'
             }
         }
     })
@@ -791,7 +1081,7 @@ def register():
             'organization': data.get('company_name', ''),
             'phone_num': data.get('phone_num', ''),
             'is_admin': False,
-            'created_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc)
         }
         
         result = users_collection.insert_one(user)
@@ -822,7 +1112,7 @@ def login():
         token = jwt.encode({
             'user_id': str(user['_id']),
             'email': user['email'],
-            'exp': datetime.utcnow() + timedelta(hours=24)
+            'exp': datetime.now(timezone.utc) + timedelta(hours=24)
         }, app.config['SECRET_KEY'], algorithm='HS256')
         
         return jsonify({
@@ -848,16 +1138,13 @@ def add_emission(current_user):
             if field not in data:
                 return jsonify({'message': f'{field} is required'}), 400
         
-        # Get emission factor
-        emission_factor_doc = emission_factors_collection.find_one({
-            'activity_type': data['category'],
-            'unit': data['unit']
-        })
+        # Calculate CO2 equivalent using improved TGO factors
+        co2_equivalent = calculate_co2_equivalent(data['category'], float(data['amount']), data['unit'])
         
-        emission_factor_value = emission_factor_doc['value'] if emission_factor_doc else 0
-        
-        # Calculate CO2 equivalent
-        co2_equivalent = float(data['amount']) * emission_factor_value
+        # Get the emission factor value for storage
+        emission_factor_value = 0
+        if co2_equivalent > 0:
+            emission_factor_value = co2_equivalent / float(data['amount'])
         
         # Create emission record (matching your exact structure)
         emission_record = {
@@ -872,9 +1159,10 @@ def add_emission(current_user):
             'emission_factor': emission_factor_value,
             'co2_equivalent': co2_equivalent,
             'calculated_emission': co2_equivalent,
-            'import_time': datetime.utcnow(),
+            'import_time': datetime.now(timezone.utc),
             'record_date': datetime(int(data['year']), int(data['month']), 1),
-            'created_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc),
+            'source': 'manual_entry'
         }
         
         result = emission_records_collection.insert_one(emission_record)
@@ -882,7 +1170,8 @@ def add_emission(current_user):
         return jsonify({
             'message': 'Emission record added successfully',
             'record_id': emission_record['record_id'],
-            'co2_equivalent': co2_equivalent
+            'co2_equivalent': co2_equivalent,
+            'emission_factor': emission_factor_value
         }), 201
         
     except Exception as e:
@@ -898,8 +1187,17 @@ def get_emissions(current_user):
         year = request.args.get('year', type=int)
         category = request.args.get('category')
         
+        # Ensure user_id consistency - check both ObjectId and string formats
+        user_id_obj = current_user['_id']
+        user_id_str = str(current_user['_id'])
+        
         # Build query
-        query = {'user_id': current_user['_id']}
+        query = {
+            '$or': [
+                {'user_id': user_id_obj},
+                {'user_id': user_id_str}
+            ]
+        }
         if month:
             query['month'] = month
         if year:
@@ -927,7 +1225,7 @@ def get_emissions(current_user):
     except Exception as e:
         return jsonify({'message': f'Error: {str(e)}'}), 500
 
-# # Dashboard Data
+# Dashboard Data - SHARED ACROSS ALL USERS
 @app.route('/api/dashboard', methods=['GET'])
 @token_required
 def get_dashboard(current_user):
@@ -940,19 +1238,19 @@ def get_dashboard(current_user):
         current_month = int(now.month)
         last_year = current_year - 1
         
-        print(f"\n=== Dashboard Request ===")
+        print(f"\n=== SHARED Dashboard Request ===")
+        print(f"User ID: {current_user['_id']} (Requesting shared data)")
         print(f"Current Month/Year: {current_month}/{current_year}")
         
-        # Get ONLY current month/year emissions
+        # Get ALL current month emissions from ALL USERS (shared dashboard)
         current_month_emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
             'year': current_year,
             'month': current_month
         }))
         current_month_total = sum(float(e.get('co2_equivalent', 0)) for e in current_month_emissions)
-        print(f"Current month ({current_month}/{current_year}) total: {current_month_total}")
+        print(f"SHARED Current month ({current_month}/{current_year}) total: {current_month_total}")
         
-        # Get last month
+        # Get last month from ALL USERS
         if current_month == 1:
             last_month = 12
             last_month_year = current_year - 1
@@ -961,35 +1259,32 @@ def get_dashboard(current_user):
             last_month_year = current_year
             
         last_month_emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
             'year': last_month_year,
             'month': last_month
         }))
         last_month_total = sum(float(e.get('co2_equivalent', 0)) for e in last_month_emissions)
         
-        # Get ONLY current year emissions
+        # Get ALL current year emissions from ALL USERS
         current_year_emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
             'year': current_year
         }))
         current_year_total = sum(float(e.get('co2_equivalent', 0)) for e in current_year_emissions)
-        print(f"Current year ({current_year}) total: {current_year_total}")
+        print(f"SHARED Current year ({current_year}) total: {current_year_total}")
         
-        # Get ONLY last year emissions
+        # Get ALL last year emissions from ALL USERS
         last_year_emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
             'year': last_year
         }))
         last_year_total = sum(float(e.get('co2_equivalent', 0)) for e in last_year_emissions)
-        print(f"Last year ({last_year}) total: {last_year_total}")
+        print(f"SHARED Last year ({last_year}) total: {last_year_total}")
         
-        # Category breakdown for CURRENT YEAR ONLY
+        # Category breakdown for CURRENT YEAR from ALL USERS
         category_breakdown = {}
         for e in current_year_emissions:
             cat = e.get('category', 'other')
             category_breakdown[cat] = category_breakdown.get(cat, 0) + float(e.get('co2_equivalent', 0))
         
-        # Monthly trend for CURRENT YEAR
+        # Monthly trend for CURRENT YEAR from ALL USERS
         monthly_trend = []
         for m in range(1, 13):
             month_data = [e for e in current_year_emissions if int(e.get('month', 0)) == m]
@@ -999,9 +1294,9 @@ def get_dashboard(current_user):
                 'total': month_total,
                 'hasData': len(month_data) > 0
             })
-        print(f"Monthly trend: {monthly_trend}")
+        print(f"SHARED Monthly trend: {monthly_trend}")
         
-        # Monthly trend for LAST YEAR
+        # Monthly trend for LAST YEAR from ALL USERS
         last_year_trend = []
         for m in range(1, 13):
             month_data = [e for e in last_year_emissions if int(e.get('month', 0)) == m]
@@ -1020,6 +1315,13 @@ def get_dashboard(current_user):
         if last_year_total > 0:
             year_change_percentage = ((current_year_total - last_year_total) / last_year_total * 100)
         
+        # Calculate record count for current month from ALL USERS
+        record_count = len(current_month_emissions)
+        
+        # Get total number of active users for context
+        total_users = users_collection.count_documents({})
+        users_with_data = len(set(str(e.get('user_id', '')) for e in current_year_emissions if e.get('user_id')))
+        
         response_data = {
             'current_month_total': round(current_month_total, 2),
             'last_month_total': round(last_month_total, 2),
@@ -1034,10 +1336,17 @@ def get_dashboard(current_user):
             'current_month': current_month,
             'current_year': current_year,
             'last_year': last_year,
-            'has_data': len(current_year_emissions) > 0
+            'has_data': len(current_year_emissions) > 0,
+            'is_admin': current_user.get('is_admin', False),
+            'record_count': record_count,
+            # Additional context for shared dashboard
+            'is_shared': True,
+            'total_users': total_users,
+            'users_with_data': users_with_data
         }
         
-        print(f"Sending response with {len(monthly_trend)} monthly data points")
+        print(f"Sending SHARED response with {len(monthly_trend)} monthly data points")
+        print(f"Total users: {total_users}, Users with data: {users_with_data}")
         print(f"Response data keys: {response_data.keys()}")
         
         return jsonify(response_data), 200
@@ -1047,6 +1356,63 @@ def get_dashboard(current_user):
         import traceback
         traceback.print_exc()
         return jsonify({'message': f'Error: {str(e)}'}), 500
+
+# Get Emission Factors
+@app.route('/api/emission-factors', methods=['GET'])
+@token_required
+def get_emission_factors(current_user):
+    try:
+        # Get query parameters
+        category = request.args.get('category')
+        language = request.args.get('language', 'en')  # Default to English
+        
+        # Build query
+        query = {}
+        if category:
+            query['category'] = category
+        
+        # Get emission factors
+        factors = list(emission_factors_collection.find(query).sort('name', 1))
+        
+        # Convert ObjectId to string and format for frontend
+        formatted_factors = []
+        categories = set()
+        
+        for factor in factors:
+            # Use Thai names/units if language is Thai and they exist
+            if language == 'th':
+                name = factor.get('name_th', factor['name'])
+                unit = factor.get('unit_th', factor['unit'])
+                notes = factor.get('notes_th', factor.get('notes', ''))
+                category_name = factor.get('category_th', factor['category'])
+            else:
+                name = factor['name']
+                unit = factor['unit']
+                notes = factor.get('notes', '')
+                category_name = factor['category']
+            
+            formatted_factor = {
+                'key': factor.get('fuel_key', factor['_id']),
+                'name': name,
+                'unit': unit,
+                'factor': factor['value'],
+                'notes': notes,
+                'category': category_name,
+                'scope': factor.get('scope', 1)
+            }
+            
+            formatted_factors.append(formatted_factor)
+            categories.add(category_name)
+        
+        return jsonify({
+            'emission_factors': formatted_factors,
+            'categories': sorted(list(categories)),
+            'count': len(formatted_factors),
+            'language': language
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error: {str(e)}'}), 500
     
 # Create Report
 @app.route('/api/reports', methods=['POST'])
@@ -1055,9 +1421,16 @@ def create_report(current_user):
     try:
         data = request.get_json()
         
+        # Ensure user_id consistency - check both ObjectId and string formats
+        user_id_obj = current_user['_id']
+        user_id_str = str(current_user['_id'])
+        
         # Get emissions for the period
         emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
+            '$or': [
+                {'user_id': user_id_obj},
+                {'user_id': user_id_str}
+            ],
             'year': {'$gte': data['start_year'], '$lte': data['end_year']},
             'month': {'$gte': data['start_month'], '$lte': data['end_month']}
         }))
@@ -1078,7 +1451,7 @@ def create_report(current_user):
             'user_id': current_user['_id'],
             'status': 'Draft',
             'total_emission': total_emission,
-            'create_date': datetime.utcnow(),
+            'create_date': datetime.now(timezone.utc),
             'organization': current_user.get('organization', ''),
             'period': {
                 'start_month': data['start_month'],
@@ -1105,7 +1478,16 @@ def create_report(current_user):
 @token_required
 def get_reports(current_user):
     try:
-        reports = list(reports_collection.find({'user_id': current_user['_id']}).sort('create_date', -1))
+        # Ensure user_id consistency - check both ObjectId and string formats
+        user_id_obj = current_user['_id']
+        user_id_str = str(current_user['_id'])
+        
+        reports = list(reports_collection.find({
+            '$or': [
+                {'user_id': user_id_obj},
+                {'user_id': user_id_str}
+            ]
+        }).sort('create_date', -1))
         
         # Convert ObjectId to string
         for report in reports:
@@ -1120,15 +1502,36 @@ def get_reports(current_user):
     except Exception as e:
         return jsonify({'message': f'Error: {str(e)}'}), 500
 
-if __name__ == '__main__':
-    print("Starting Carbon Accounting API...")
-    print(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
-    app.run(debug=True, host='0.0.0.0', port=5000)
-
 # File Upload Endpoint
-@app.route('/api/upload', methods=['POST'])
-@token_required
-def upload_file(current_user):
+@app.route('/api/upload', methods=['POST', 'OPTIONS'])
+def upload_file():
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    
+    # Apply token authentication only for POST requests
+    token = request.headers.get('Authorization')
+    
+    if not token:
+        return jsonify({'success': False, 'message': 'Token is missing'}), 401
+    
+    try:
+        # Remove 'Bearer ' prefix if present
+        if token.startswith('Bearer '):
+            token = token.split(' ')[1]
+            
+        data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        current_user = users_collection.find_one({'_id': ObjectId(data['user_id'])})
+        
+        if not current_user:
+            return jsonify({'success': False, 'message': 'User not found'}), 401
+            
+    except jwt.ExpiredSignatureError:
+        return jsonify({'success': False, 'message': 'Token has expired'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'success': False, 'message': 'Token is invalid'}), 401
+    except:
+        return jsonify({'success': False, 'message': 'Token is invalid'}), 401
     try:
         print("=== UPLOAD REQUEST ===")
         
@@ -1163,7 +1566,7 @@ def upload_file(current_user):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Upload error: {str(e)}'}), 500
-    
+
 # Anomaly Detection
 @app.route('/api/anomalies/check', methods=['POST'])
 @token_required
@@ -1173,9 +1576,16 @@ def check_anomalies(current_user):
         category = data['category']
         amount = data['amount']
         
+        # Ensure user_id consistency - check both ObjectId and string formats
+        user_id_obj = current_user['_id']
+        user_id_str = str(current_user['_id'])
+        
         # Get historical data for comparison
         historical = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
+            '$or': [
+                {'user_id': user_id_obj},
+                {'user_id': user_id_str}
+            ],
             'category': category
         }).sort('created_at', -1).limit(12))
         
@@ -1201,47 +1611,361 @@ def check_anomalies(current_user):
     except Exception as e:
         return jsonify({'message': f'Error: {str(e)}'}), 500
 
-# Multi-format Report Generation
-@app.route('/api/reports/generate', methods=['POST'])
+# AI-Powered Report Generation
+@app.route('/api/reports/generate-ai', methods=['POST', 'OPTIONS'])
 @token_required
-def generate_formatted_report(current_user):
+def generate_ai_powered_report(current_user):
+    """Generate AI-powered reports with multiple format support"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
     try:
         data = request.get_json()
-        report_format = data['format']  # ISO, CFO, GHG
-        start_date = data['start_date']
-        end_date = data['end_date']
         
-        # Get emission data
-        emissions = get_emissions_for_period(
-            current_user['_id'],
-            start_date,
-            end_date
+        # Validate request
+        validation_result = validate_report_request(data)
+        if not validation_result['valid']:
+            return jsonify({
+                'success': False,
+                'message': validation_result['error']
+            }), 400
+        
+        # Generate report using AI system
+        result = generate_ai_report(
+            user_id=str(current_user['_id']),
+            start_date=data['start_date'],
+            end_date=data['end_date'],
+            report_format=data.get('report_format', 'GHG'),
+            file_type=data.get('file_type', 'PDF'),
+            language=data.get('language', 'EN'),
+            include_ai=data.get('include_ai_insights', True)
         )
         
-        # Generate report based on format
-        if report_format == 'ISO':
-            report = generate_iso_14064_report(emissions, current_user)
-        elif report_format == 'CFO':
-            report = generate_cfo_report(emissions, current_user)
-        elif report_format == 'GHG':
-            report = generate_ghg_protocol_report(emissions, current_user)
+        if result['success']:
+            # Save report metadata to database
+            report_metadata = {
+                'report_id': result['report_id'],
+                'user_id': current_user['_id'],
+                'report_format': data['report_format'],
+                'start_date': data['start_date'],
+                'end_date': data['end_date'],
+                'pdf_path': result.get('pdf_path'),
+                'generated_at': datetime.now(timezone.utc),
+                'status': 'completed',
+                'ai_insights_included': data.get('include_ai_insights', True)
+            }
+            
+            reports_collection.insert_one(report_metadata)
+            
+            return jsonify({
+                'success': True,
+                'report_id': result['report_id'],
+                'message': 'Report generated successfully',
+                'download_url': f'/api/reports/download/{result["report_id"]}',
+                'ai_insights': result.get('ai_insights', {}),
+                'generated_at': result['generated_at']
+            }), 200
         else:
-            return jsonify({'message': 'Invalid report format'}), 400
-        
-        # Generate AI description
-        ai_description = generate_ai_description(emissions, report_format)
-        report['ai_description'] = ai_description
-        
-        # Save report
-        report_id = reports_collection.insert_one(report).inserted_id
+            return jsonify({
+                'success': False,
+                'message': result.get('message', 'Report generation failed'),
+                'error': result.get('error')
+            }), 500
+            
+    except Exception as e:
+        print(f"AI report generation error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Report generation failed: {str(e)}'
+        }), 500
+
+# Get Available Report Formats
+@app.route('/api/reports/formats', methods=['GET', 'OPTIONS'])
+@token_required
+def get_report_formats(current_user):
+    """Get available report formats"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    try:
+        formats = get_available_report_formats()
+        format_descriptions = {
+            'ISO': 'ISO 14064-1:2018 Greenhouse Gas Quantification and Reporting Standard',
+            'CFO': 'CFO-focused Carbon Emissions Financial Report',
+            'GHG': 'GHG Protocol Corporate Accounting and Reporting Standard'
+        }
         
         return jsonify({
-            'report_id': str(report_id),
-            'download_url': f'/api/reports/download/{report_id}'
+            'success': True,
+            'formats': [
+                {
+                    'code': fmt,
+                    'name': fmt,
+                    'description': format_descriptions.get(fmt, f'{fmt} format report')
+                }
+                for fmt in formats
+            ]
         }), 200
         
     except Exception as e:
-        return jsonify({'message': f'Error: {str(e)}'}), 500
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# Get Available File Types
+@app.route('/api/reports/file-types', methods=['GET', 'OPTIONS'])
+@token_required
+def get_file_types(current_user):
+    """Get available file types"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    try:
+        file_types = get_available_file_types()
+        file_type_descriptions = {
+            'PDF': 'Portable Document Format - Professional report layout',
+            'EXCEL': 'Microsoft Excel - Data analysis and charts',
+            'WORD': 'Microsoft Word - Editable document format'
+        }
+        
+        return jsonify({
+            'success': True,
+            'file_types': [
+                {
+                    'code': ft,
+                    'name': ft,
+                    'description': file_type_descriptions.get(ft, f'{ft} format')
+                }
+                for ft in file_types
+            ]
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# Get Available Languages
+@app.route('/api/reports/languages', methods=['GET', 'OPTIONS'])
+@token_required
+def get_languages(current_user):
+    """Get available languages"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    try:
+        languages = get_available_languages()
+        language_descriptions = {
+            'EN': 'English - International standard language',
+            'TH': 'Thai - ภาษาไทย สำหรับรายงานในประเทศไทย'
+        }
+        
+        return jsonify({
+            'success': True,
+            'languages': [
+                {
+                    'code': lang,
+                    'name': 'English' if lang == 'EN' else 'ภาษาไทย',
+                    'description': language_descriptions.get(lang, f'{lang} language')
+                }
+                for lang in languages
+            ]
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# Download Report
+@app.route('/api/reports/download/<report_id>', methods=['GET'])
+@token_required
+def download_report(current_user, report_id):
+    """Download generated report PDF or provide download information"""
+    try:
+        # Check if this is a request for download info (via query parameter)
+        get_info = request.args.get('info', 'false').lower() == 'true'
+        
+        # Find report in database
+        report = reports_collection.find_one({
+            'report_id': report_id,
+            'user_id': current_user['_id']
+        })
+        
+        if not report:
+            return jsonify({
+                'success': False,
+                'message': 'Report not found'
+            }), 404
+        
+        # Try both old and new field names for backward compatibility
+        file_path_from_db = report.get('file_path') or report.get('pdf_path')
+        if not file_path_from_db:
+            return jsonify({
+                'success': False,
+                'message': 'Report file path not found'
+            }), 404
+        
+        print(f"Original file path from DB: {file_path_from_db}")
+        
+        # Handle different path scenarios
+        file_path = None
+        
+        # If path starts with 'backend\' or 'backend/', remove it since we're already in backend directory
+        if file_path_from_db.startswith('backend\\') or file_path_from_db.startswith('backend/'):
+            relative_path = file_path_from_db.replace('backend\\', '').replace('backend/', '')
+            file_path = os.path.join(os.getcwd(), relative_path)
+        # If it's already a relative path from backend directory
+        elif file_path_from_db.startswith('reports\\') or file_path_from_db.startswith('reports/'):
+            file_path = os.path.join(os.getcwd(), file_path_from_db)
+        # If it's an absolute path
+        elif os.path.isabs(file_path_from_db):
+            file_path = file_path_from_db
+        else:
+            # Try as relative path from current directory
+            file_path = os.path.join(os.getcwd(), file_path_from_db)
+        
+        # Normalize the path
+        file_path = os.path.normpath(file_path)
+        
+        print(f"Resolved file path: {file_path}")
+        print(f"Current working directory: {os.getcwd()}")
+        print(f"File exists: {os.path.exists(file_path)}")
+        
+        if not os.path.exists(file_path):
+            # Try alternative paths
+            alternatives = [
+                os.path.join(os.getcwd(), 'reports', os.path.basename(file_path_from_db)),
+                os.path.join(os.path.dirname(os.getcwd()), file_path_from_db),
+                file_path_from_db
+            ]
+            
+            for alt_path in alternatives:
+                alt_path = os.path.normpath(alt_path)
+                print(f"Trying alternative path: {alt_path}")
+                if os.path.exists(alt_path):
+                    file_path = alt_path
+                    print(f"Found file at: {file_path}")
+                    break
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Report file not found on disk',
+                    'debug_info': {
+                        'original_path': file_path_from_db,
+                        'resolved_path': file_path,
+                        'cwd': os.getcwd(),
+                        'alternatives_tried': alternatives
+                    }
+                }), 404
+        
+        # If requesting download info, return file information
+        if get_info:
+            file_size = os.path.getsize(file_path)
+            file_name = f'carbon_report_{report_id}.pdf'
+            
+            return jsonify({
+                'success': True,
+                'download_url': f'/api/reports/download/{report_id}',
+                'file_name': file_name,
+                'file_size': file_size,
+                'report_format': report.get('report_format', 'GHG'),
+                'language': report.get('language', 'EN'),
+                'generated_at': report.get('generated_at', report.get('create_date')),
+                'message': 'File ready for download'
+            }), 200
+        
+        # Otherwise, serve the file for download
+        from flask import send_file
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=f'carbon_report_{report_id}.pdf',
+            mimetype='application/pdf'
+        )
+        
+    except Exception as e:
+        print(f"Download error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Download error: {str(e)}'
+        }), 500
+
+# Preview Report Data
+@app.route('/api/reports/preview', methods=['POST', 'OPTIONS'])
+@token_required
+def preview_report_data(current_user):
+    """Preview report data before generation"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    try:
+        data = request.get_json()
+        
+        # Validate request
+        validation_result = validate_report_request(data)
+        if not validation_result['valid']:
+            return jsonify({
+                'success': False,
+                'message': validation_result['error']
+            }), 400
+        
+        # Parse dates
+        start_date = datetime.fromisoformat(data['start_date'].replace('Z', '+00:00'))
+        end_date = datetime.fromisoformat(data['end_date'].replace('Z', '+00:00'))
+        
+        # Get emissions data for preview
+        emissions = list(emission_records_collection.find({
+            'user_id': current_user['_id'],
+            'record_date': {
+                '$gte': start_date,
+                '$lte': end_date
+            }
+        }))
+        
+        # Calculate summary statistics
+        total_emissions = sum(e.get('co2_equivalent', 0) for e in emissions)
+        
+        # Group by category
+        emissions_by_category = {}
+        for emission in emissions:
+            category = emission.get('category', 'other')
+            emissions_by_category[category] = emissions_by_category.get(category, 0) + emission.get('co2_equivalent', 0)
+        
+        # Group by scope
+        emissions_by_scope = {'Scope 1': 0, 'Scope 2': 0, 'Scope 3': 0}
+        scope_mapping = {
+            'electricity': 2, 'diesel': 1, 'gasoline': 1, 
+            'natural_gas': 1, 'waste': 3, 'transport': 3
+        }
+        
+        for emission in emissions:
+            category = emission.get('category', 'other')
+            scope = scope_mapping.get(category, 3)
+            scope_key = f"Scope {scope}"
+            emissions_by_scope[scope_key] += emission.get('co2_equivalent', 0)
+        
+        return jsonify({
+            'success': True,
+            'preview': {
+                'period': f"{start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}",
+                'total_emissions': round(total_emissions, 2),
+                'record_count': len(emissions),
+                'emissions_by_category': emissions_by_category,
+                'emissions_by_scope': emissions_by_scope,
+                'report_format': data['report_format'],
+                'organization': current_user.get('organization', 'Unknown Organization')
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Preview error: {str(e)}'
+        }), 500
 
 # AI Text Generation
 def generate_ai_description(emissions_data, report_format):
@@ -1276,149 +2000,129 @@ def generate_ai_description(emissions_data, report_format):
 
 # Helper functions for file processing
 def process_spreadsheet(file, user_id):
-    df = pd.read_excel(file) if file.filename.endswith('.xlsx', '.xls') else pd.read_csv(file)
-    
-    # Expected columns: date, category, amount, unit
-    records_added = 0
-    for index, row in df.iterrows():
-        emission_record = {
-            'record_id': generate_record_id(),
-            'user_id': user_id,
-            'category': row['category'],
-            'amount': float(row['amount']),
-            'unit': row['unit'],
-            'month': pd.to_datetime(row['date']).month,
-            'year': pd.to_datetime(row['date']).year,
-            'created_at': datetime.utcnow()
-        }
-        
-        # Calculate CO2
-        factor = emission_factors_collection.find_one({
-            'activity_type': row['category'],
-            'unit': row['unit']
-        })
-        
-        emission_record['co2_equivalent'] = float(row['amount']) * (factor['value'] if factor else 0)
-        
-        emission_records_collection.insert_one(emission_record)
-        records_added += 1
-    
-    return {'message': f'Successfully imported {records_added} records'}
-
-@app.route('/api/dashboard', methods=['GET'])
-@token_required
-def get_dashboard(current_user):
+    """Process Excel/CSV files and extract emission data"""
     try:
+        import pandas as pd
         from datetime import datetime
         
-        # Get current date info
-        now = datetime.now()
-        current_year = int(now.year)
-        current_month = int(now.month)
-        last_year = current_year - 1
+        print("Reading spreadsheet file...")
         
-        print(f"\n=== Dashboard Request ===")
-        print(f"User: {current_user['email']}")
-        print(f"Current Month/Year: {current_month}/{current_year}")
+        # Read file based on extension
+        filename = file.filename.lower()
+        if filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:  # Excel files
+            df = pd.read_excel(file, sheet_name=0)
         
-        # Get ONLY current month emissions
-        current_month_emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
-            'year': current_year,
-            'month': current_month
-        }))
+        print(f"File has {len(df)} rows and columns: {list(df.columns)}")
         
-        print(f"Current month emissions count: {len(current_month_emissions)}")
-        for e in current_month_emissions:
-            print(f"  - {e['category']}: {e['amount']} (month: {e['month']}, year: {e['year']})")
+        # Normalize column names (strip whitespace, lowercase)
+        df.columns = df.columns.str.strip().str.lower()
         
-        current_month_total = sum(float(e.get('co2_equivalent', 0)) for e in current_month_emissions)
+        # Try to identify columns
+        date_col = None
+        category_col = None
+        amount_col = None
+        unit_col = None
         
-        # Get last month
-        if current_month == 1:
-            last_month = 12
-            last_month_year = current_year - 1
-        else:
-            last_month = current_month - 1
-            last_month_year = current_year
-            
-        last_month_emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
-            'year': last_month_year,
-            'month': last_month
-        }))
-        last_month_total = sum(float(e.get('co2_equivalent', 0)) for e in last_month_emissions)
+        for col in df.columns:
+            if any(keyword in col for keyword in ['date', 'วันที่', 'เดือน']):
+                date_col = col
+            elif any(keyword in col for keyword in ['category', 'type', 'ประเภท', 'หมวด']):
+                category_col = col
+            elif any(keyword in col for keyword in ['amount', 'quantity', 'จำนวน', 'ปริมาณ']):
+                amount_col = col
+            elif any(keyword in col for keyword in ['unit', 'หน่วย']):
+                unit_col = col
         
-        # Get current year total
-        current_year_emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
-            'year': current_year
-        }))
-        current_year_total = sum(float(e.get('co2_equivalent', 0)) for e in current_year_emissions)
+        # Fallback to positional
+        if not all([date_col, category_col, amount_col]):
+            cols = list(df.columns)
+            if len(cols) >= 3:
+                date_col = cols[0]
+                category_col = cols[1]
+                amount_col = cols[2]
+                unit_col = cols[3] if len(cols) > 3 else None
         
-        # Get last year total
-        last_year_emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
-            'year': last_year
-        }))
-        last_year_total = sum(float(e.get('co2_equivalent', 0)) for e in last_year_emissions)
+        if not all([date_col, category_col, amount_col]):
+            return {
+                'success': False,
+                'message': f'Required columns not found. Found: {list(df.columns)}'
+            }
         
-        # Category breakdown for current year
-        category_breakdown = {}
-        for e in current_year_emissions:
-            cat = e.get('category', 'other')
-            category_breakdown[cat] = category_breakdown.get(cat, 0) + float(e.get('co2_equivalent', 0))
+        records_added = 0
+        errors = []
         
-        # Monthly trend for current year
-        monthly_trend = []
-        for m in range(1, 13):
-            month_data = [e for e in current_year_emissions if e.get('month') == m]
-            month_total = sum(float(e.get('co2_equivalent', 0)) for e in month_data)
-            monthly_trend.append({
-                'month': m,
-                'total': month_total,
-                'hasData': len(month_data) > 0
-            })
+        for index, row in df.iterrows():
+            try:
+                # Parse date
+                try:
+                    date_obj = pd.to_datetime(row[date_col])
+                except:
+                    date_obj = datetime.now()
+                
+                # Get category and normalize
+                category = str(row[category_col]).lower().strip()
+                
+                # Get amount
+                amount = float(row[amount_col])
+                
+                # Get unit and normalize (CASE-INSENSITIVE)
+                unit = str(row[unit_col]).strip() if unit_col else 'kwh'
+                
+                print(f"Processing row {index + 1}: category={category}, amount={amount}, unit={unit}")
+                
+                # Calculate CO2 equivalent
+                co2_equivalent = calculate_co2_equivalent(category, amount, unit)
+                
+                if co2_equivalent == 0:
+                    errors.append(f'Row {index + 2}: Warning - CO2 calculation returned 0 for {category}')
+                
+                # Get emission factor
+                emission_factor_value = 0
+                if co2_equivalent > 0 and amount > 0:
+                    emission_factor_value = co2_equivalent / amount
+                
+                # Create emission record
+                emission_record = {
+                    'record_id': generate_record_id(),
+                    'user_id': user_id,
+                    'category': category,
+                    'emission_type': category,
+                    'amount': amount,
+                    'unit': unit,  # Keep original casing for display
+                    'month': date_obj.month,
+                    'year': date_obj.year,
+                    'emission_factor': emission_factor_value,
+                    'co2_equivalent': co2_equivalent,
+                    'calculated_emission': co2_equivalent,
+                    'import_time': datetime.now(timezone.utc),
+                    'record_date': date_obj,
+                    'created_at': datetime.now(timezone.utc),
+                    'source': 'spreadsheet'
+                }
+                
+                emission_records_collection.insert_one(emission_record)
+                records_added += 1
+                
+                print(f"✓ Added: {category} - {amount} {unit} = {co2_equivalent:.2f} kg CO2e")
+                
+            except Exception as e:
+                error_msg = f"Row {index + 2}: {str(e)}"
+                errors.append(error_msg)
+                print(f"✗ Error: {error_msg}")
+                continue
         
-        # Monthly trend for last year
-        last_year_trend = []
-        for m in range(1, 13):
-            month_data = [e for e in last_year_emissions if e.get('month') == m]
-            month_total = sum(float(e.get('co2_equivalent', 0)) for e in month_data)
-            last_year_trend.append({
-                'month': m,
-                'total': month_total
-            })
-        
-        print(f"Current month total: {current_month_total}")
-        print(f"Current year total: {current_year_total}")
-        print(f"Category breakdown: {category_breakdown}")
-        print(f"Monthly trend has data: {any(m['hasData'] for m in monthly_trend)}")
-        
-        response_data = {
-            'current_month_total': current_month_total,
-            'last_month_total': last_month_total,
-            'month_change_percentage': ((current_month_total - last_month_total) / last_month_total * 100) if last_month_total > 0 else 0,
-            'current_year_total': current_year_total,
-            'last_year_total': last_year_total,
-            'year_change_percentage': ((current_year_total - last_year_total) / last_year_total * 100) if last_year_total > 0 else 0,
-            'category_breakdown': category_breakdown,
-            'monthly_trend': monthly_trend,
-            'last_year_trend': last_year_trend,
-            'missing_categories': [],
-            'current_month': current_month,
-            'current_year': current_year,
-            'last_year': last_year,
-            'has_data': len(current_year_emissions) > 0
+        return {
+            'success': True,
+            'message': f'Successfully processed {records_added} records',
+            'records_added': records_added,
+            'errors': errors[:10]  # Limit to 10 errors
         }
         
-        return jsonify(response_data), 200
-        
     except Exception as e:
-        print(f"Dashboard error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'message': f'Error: {str(e)}'}), 500
+        print(f"Spreadsheet processing error: {str(e)}")
+        return {'success': False, 'message': f'Error processing spreadsheet: {str(e)}'}
 
 @app.route('/api/debug/emissions', methods=['GET'])
 @token_required
@@ -1515,3 +2219,737 @@ def debug_years(current_user):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# Admin Routes (require admin privileges)
+def admin_required(f):
+    @wraps(f)
+    def decorated(current_user, *args, **kwargs):
+        if not current_user.get('is_admin', False):
+            return jsonify({'message': 'Admin privileges required'}), 403
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+@app.route('/api/admin/users', methods=['GET'])
+@token_required
+@admin_required
+def get_all_users(current_user):
+    """Get all users (admin only)"""
+    try:
+        users = list(users_collection.find({}, {
+            'password': 0  # Exclude password from response
+        }).sort('created_at', -1))
+        
+        # Convert ObjectId to string
+        for user in users:
+            user['_id'] = str(user['_id'])
+            user['id'] = str(user['_id'])  # Add id field for frontend
+        
+        return jsonify({
+            'success': True,
+            'users': users
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/users', methods=['POST'])
+@token_required
+@admin_required
+def create_user_admin(current_user):
+    """Create new user (admin only)"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('username') or not data.get('email') or not data.get('password'):
+            return jsonify({
+                'success': False,
+                'message': 'Username, email and password are required'
+            }), 400
+        
+        # Check if user exists
+        if users_collection.find_one({'email': data['email']}):
+            return jsonify({
+                'success': False,
+                'message': 'User with this email already exists'
+            }), 400
+        
+        # Create new user
+        user = {
+            'email': data['email'],
+            'username': data['username'],
+            'password': generate_password_hash(data['password']),
+            'organization': data.get('organization', ''),
+            'phone_num': data.get('phone_num', ''),
+            'is_admin': data.get('is_admin', False),
+            'created_at': datetime.now(timezone.utc)
+        }
+        
+        result = users_collection.insert_one(user)
+        
+        # Log audit
+        audit_log = {
+            'audit_id': generate_audit_id(),
+            'user_id': current_user['_id'],
+            'username': current_user.get('username', 'Unknown'),
+            'action': 'create_user',
+            'details': {
+                'created_user_email': data['email'],
+                'created_user_username': data['username'],
+                'is_admin': data.get('is_admin', False)
+            },
+            'timestamp': datetime.now(timezone.utc)
+        }
+        audits_collection.insert_one(audit_log)
+        
+        return jsonify({
+            'success': True,
+            'message': 'User created successfully',
+            'user_id': str(result.inserted_id)
+        }), 201
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/users/<user_id>/admin-status', methods=['PUT'])
+@token_required
+@admin_required
+def update_user_admin_status(current_user, user_id):
+    """Update user admin status (admin only)"""
+    try:
+        data = request.get_json()
+        is_admin = data.get('is_admin', False)
+        
+        # Update user
+        result = users_collection.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': {'is_admin': is_admin}}
+        )
+        
+        if result.matched_count == 0:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        # Get updated user for audit log
+        updated_user = users_collection.find_one({'_id': ObjectId(user_id)})
+        
+        # Log audit
+        audit_log = {
+            'audit_id': generate_audit_id(),
+            'user_id': current_user['_id'],
+            'username': current_user.get('username', 'Unknown'),
+            'action': 'update_admin_status',
+            'details': {
+                'target_user_email': updated_user.get('email'),
+                'new_admin_status': is_admin
+            },
+            'timestamp': datetime.now(timezone.utc)
+        }
+        audits_collection.insert_one(audit_log)
+        
+        return jsonify({
+            'success': True,
+            'message': f'User admin status updated to {is_admin}'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/users/<user_id>/reset-password', methods=['PUT'])
+@token_required
+@admin_required
+def reset_user_password(current_user, user_id):
+    """Reset user password (admin only)"""
+    try:
+        data = request.get_json()
+        new_password = data.get('new_password')
+        
+        if not new_password:
+            return jsonify({
+                'success': False,
+                'message': 'New password is required'
+            }), 400
+        
+        # Update password
+        result = users_collection.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': {'password': generate_password_hash(new_password)}}
+        )
+        
+        if result.matched_count == 0:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        # Get user for audit log
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+        
+        # Log audit
+        audit_log = {
+            'audit_id': generate_audit_id(),
+            'user_id': current_user['_id'],
+            'username': current_user.get('username', 'Unknown'),
+            'action': 'reset_password',
+            'details': {
+                'target_user_email': user.get('email')
+            },
+            'timestamp': datetime.now(timezone.utc)
+        }
+        audits_collection.insert_one(audit_log)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Password reset successfully'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/users/<user_id>', methods=['DELETE'])
+@token_required
+@admin_required
+def delete_user(current_user, user_id):
+    """Delete user (admin only)"""
+    try:
+        # Get user before deletion for audit log
+        user_to_delete = users_collection.find_one({'_id': ObjectId(user_id)})
+        
+        if not user_to_delete:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        # Don't allow deleting yourself
+        if str(user_to_delete['_id']) == str(current_user['_id']):
+            return jsonify({
+                'success': False,
+                'message': 'Cannot delete your own account'
+            }), 400
+        
+        # Delete user
+        users_collection.delete_one({'_id': ObjectId(user_id)})
+        
+        # Also delete user's emission records (optional - you might want to keep them)
+        # emission_records_collection.delete_many({'user_id': ObjectId(user_id)})
+        
+        # Log audit
+        audit_log = {
+            'audit_id': generate_audit_id(),
+            'user_id': current_user['_id'],
+            'username': current_user.get('username', 'Unknown'),
+            'action': 'delete_user',
+            'details': {
+                'deleted_user_email': user_to_delete.get('email'),
+                'deleted_user_username': user_to_delete.get('username')
+            },
+            'timestamp': datetime.now(timezone.utc)
+        }
+        audits_collection.insert_one(audit_log)
+        
+        return jsonify({
+            'success': True,
+            'message': 'User deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/audit-logs', methods=['GET'])
+@token_required
+@admin_required
+def get_audit_logs(current_user):
+    """Get audit logs from audit_id (admin only)"""
+    try:
+        # Get query parameters
+        limit = int(request.args.get('limit', 100))
+        skip = int(request.args.get('skip', 0))
+        request_type = request.args.get('request_type')  # filter by request_type
+        
+        # Build query
+        query = {}
+        if request_type:
+            query['action'] = request_type
+        
+        # Get audit logs sorted by audit_id
+        logs = list(audits_collection.find(query).sort('audit_id', -1).skip(skip).limit(limit))
+        
+        # Simple conversion - just convert ObjectId to string, nothing else
+        for log in logs:
+            log['_id'] = str(log['_id'])
+            if 'user_id' in log:
+                log['user_id'] = str(log['user_id'])
+            
+            # Keep details simple - just convert ObjectId to string if needed
+            if 'details' in log and isinstance(log['details'], dict):
+                for key, value in list(log['details'].items()):
+                    if hasattr(value, '__class__') and 'ObjectId' in str(type(value)):
+                        log['details'][key] = str(value)
+        
+        return jsonify({
+            'success': True,
+            'logs': logs,
+            'total': audits_collection.count_documents(query)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# Helper function to generate edit request IDs
+def generate_request_id():
+    count = edit_requests_collection.count_documents({})
+    return f"REQ{str(count + 1).zfill(3)}"
+
+# Edit Request Routes (for non-admin users)
+@app.route('/api/edit-requests', methods=['POST'])
+@token_required
+def create_edit_request(current_user):
+    """Create a new edit/delete request using audit_id for tracking"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['record_id', 'request_type', 'reason']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        # Check if record exists and belongs to user
+        record = emission_records_collection.find_one({
+            'record_id': data['record_id'],
+            '$or': [
+                {'user_id': current_user['_id']},
+                {'user_id': str(current_user['_id'])}
+            ]
+        })
+        
+        if not record:
+            return jsonify({
+                'success': False,
+                'message': 'Record not found or access denied'
+            }), 404
+        
+        # Check if there's already a pending request for this record
+        existing_request = edit_requests_collection.find_one({
+            'record_id': data['record_id'],
+            'status': 'pending'
+        })
+        
+        if existing_request:
+            return jsonify({
+                'success': False,
+                'message': 'There is already a pending request for this record'
+            }), 400
+        
+        # Generate audit_id for tracking instead of using dates
+        request_audit_id = generate_audit_id()
+        
+        # Create the request with audit_id tracking
+        edit_request = {
+            'request_id': generate_request_id(),
+            'audit_id': request_audit_id,  # Use audit_id instead of date tracking
+            'record_id': data['record_id'],
+            'user_id': current_user['_id'],
+            'user_email': current_user['email'],
+            'request_type': data['request_type'],  # 'edit' or 'delete'
+            'reason': data['reason'],
+            'status': 'pending',
+            'created_at': datetime.now(timezone.utc),  # Add explicit created_at
+            'sequence': audits_collection.count_documents({}) + 1,  # Simple sequence number
+            'original_data': {
+                'category': record['category'],
+                'amount': record['amount'],
+                'unit': record['unit'],
+                'month': record['month'],
+                'year': record['year'],
+                'co2_equivalent': record['co2_equivalent']
+            }
+        }
+        
+        # Add proposed changes if it's an edit request
+        if data['request_type'] == 'edit':
+            proposed_changes = data.get('proposed_changes', {})
+            if not proposed_changes:
+                return jsonify({
+                    'success': False,
+                    'message': 'Proposed changes are required for edit requests'
+                }), 400
+            
+            edit_request['proposed_changes'] = proposed_changes
+        
+        # Insert the request
+        result = edit_requests_collection.insert_one(edit_request)
+        
+        # Log audit with the same audit_id for tracking
+        log_audit(
+            current_user['_id'],
+            current_user.get('username', 'Unknown'),
+            'create_edit_request',
+            {
+                'request_id': edit_request['request_id'],
+                'audit_id': request_audit_id,
+                'record_id': data['record_id'],
+                'request_type': data['request_type'],
+                'reason': data['reason'][:100]
+            }
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'{data["request_type"].title()} request submitted successfully',
+            'request_id': edit_request['request_id'],
+            'audit_id': request_audit_id
+        }), 201
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/edit-requests', methods=['GET'])
+@token_required
+def get_edit_requests(current_user):
+    """Get edit requests for current user using audit_id tracking"""
+    try:
+        # Get query parameters
+        status = request.args.get('status')  # pending, approved, rejected
+        
+        # Build query
+        query = {
+            '$or': [
+                {'user_id': current_user['_id']},
+                {'user_id': str(current_user['_id'])}
+            ]
+        }
+        if status:
+            query['status'] = status
+        
+        # Get requests sorted by sequence (no date parsing needed)
+        requests = list(edit_requests_collection.find(query).sort('sequence', -1))
+        
+        # Convert ObjectId to string and add simple display info
+        for req in requests:
+            req['_id'] = str(req['_id'])
+            req['user_id'] = str(req['user_id'])
+            
+            # Add simple status display without complex date parsing
+            req['display_status'] = req.get('status', 'unknown').title()
+            req['audit_reference'] = req.get('audit_id', 'N/A')
+            
+            # Add simple sequence info for sorting/display
+            req['submission_order'] = req.get('sequence', 0)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'requests': requests,
+                'count': len(requests)
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# Admin routes for managing edit requests
+@app.route('/api/admin/edit-requests', methods=['GET'])
+@token_required
+@admin_required
+def get_all_edit_requests(current_user):
+    """Get edit requests from audit_id (admin only)"""
+    try:
+        # Get query parameters
+        status = request.args.get('status')
+        limit = int(request.args.get('limit', 50))
+        skip = int(request.args.get('skip', 0))
+        request_type = request.args.get('request_type')  # filter by request_type
+        
+        # Build query
+        query = {}
+        if status:
+            query['status'] = status
+        if request_type:
+            query['request_type'] = request_type
+        
+        # Get requests sorted by audit_id
+        requests = list(edit_requests_collection.find(query).sort('audit_id', -1).skip(skip).limit(limit))
+        
+        # Simple conversion - just convert ObjectId to string, nothing else
+        for req in requests:
+            req['_id'] = str(req['_id'])
+            req['user_id'] = str(req['user_id'])
+            
+            # Convert ObjectId fields if present
+            if 'processed_by' in req and req['processed_by']:
+                req['processed_by'] = str(req['processed_by'])
+            
+            # Simple status info
+            req['status_display'] = req.get('status', 'unknown').title()
+        
+        return jsonify({
+            'success': True,
+            'requests': requests,
+            'count': len(requests),
+            'total': edit_requests_collection.count_documents(query)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/edit-requests/<request_id>/approve', methods=['POST'])
+@token_required
+@admin_required
+def approve_edit_request(current_user, request_id):
+    """Approve an edit request and apply changes (admin only)"""
+    try:
+        # Find the request
+        edit_request = edit_requests_collection.find_one({'request_id': request_id})
+        
+        if not edit_request:
+            return jsonify({
+                'success': False,
+                'message': 'Request not found'
+            }), 404
+        
+        if edit_request['status'] != 'pending':
+            return jsonify({
+                'success': False,
+                'message': 'Request has already been processed'
+            }), 400
+        
+        # Find the original record
+        record = emission_records_collection.find_one({'record_id': edit_request['record_id']})
+        
+        if not record:
+            return jsonify({
+                'success': False,
+                'message': 'Original record not found'
+            }), 404
+        
+        # Apply changes based on request type
+        if edit_request['request_type'] == 'delete':
+            # Delete the record
+            emission_records_collection.delete_one({'record_id': edit_request['record_id']})
+            
+            # Update request status
+            edit_requests_collection.update_one(
+                {'request_id': request_id},
+                {
+                    '$set': {
+                        'status': 'approved',
+                        'processed_by': current_user['_id'],
+                        'processed_at': datetime.now(timezone.utc),
+                        'admin_notes': request.get_json().get('admin_notes', '')
+                    }
+                }
+            )
+            
+            # Log audit
+            log_audit(
+                current_user['_id'],
+                current_user.get('username', 'Unknown'),
+                'approve_delete_request',
+                {
+                    'request_id': request_id,
+                    'deleted_record_id': edit_request['record_id'],
+                    'original_user': edit_request['user_email']
+                }
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': 'Delete request approved and record deleted successfully'
+            }), 200
+            
+        elif edit_request['request_type'] == 'edit':
+            # Apply the proposed changes
+            proposed_changes = edit_request.get('proposed_changes', {})
+            
+            # Prepare update data
+            update_data = {}
+            for field, value in proposed_changes.items():
+                if field in ['category', 'amount', 'unit', 'month', 'year']:
+                    update_data[field] = value
+            
+            # Recalculate CO2 equivalent if relevant fields changed
+            if any(field in proposed_changes for field in ['category', 'amount', 'unit']):
+                category = proposed_changes.get('category', record['category'])
+                amount = float(proposed_changes.get('amount', record['amount']))
+                unit = proposed_changes.get('unit', record['unit'])
+                
+                co2_equivalent = calculate_co2_equivalent(category, amount, unit)
+                update_data['co2_equivalent'] = co2_equivalent
+                update_data['calculated_emission'] = co2_equivalent
+                
+                # Update emission factor
+                if amount > 0:
+                    update_data['emission_factor'] = co2_equivalent / amount
+            
+            # Update record date if month/year changed
+            if 'month' in proposed_changes or 'year' in proposed_changes:
+                month = int(proposed_changes.get('month', record['month']))
+                year = int(proposed_changes.get('year', record['year']))
+                update_data['record_date'] = datetime(year, month, 1)
+                update_data['month'] = month
+                update_data['year'] = year
+            
+            # Add audit trail
+            update_data['last_modified'] = datetime.now(timezone.utc)
+            update_data['modified_by'] = current_user['_id']
+            
+            # Update the record
+            emission_records_collection.update_one(
+                {'record_id': edit_request['record_id']},
+                {'$set': update_data}
+            )
+            
+            # Update request status
+            edit_requests_collection.update_one(
+                {'request_id': request_id},
+                {
+                    '$set': {
+                        'status': 'approved',
+                        'processed_by': current_user['_id'],
+                        'processed_at': datetime.now(timezone.utc),
+                        'admin_notes': request.get_json().get('admin_notes', ''),
+                        'applied_changes': update_data
+                    }
+                }
+            )
+            
+            # Log audit
+            log_audit(
+                current_user['_id'],
+                current_user.get('username', 'Unknown'),
+                'approve_edit_request',
+                {
+                    'request_id': request_id,
+                    'edited_record_id': edit_request['record_id'],
+                    'changes_applied': update_data,
+                    'original_user': edit_request['user_email']
+                }
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': 'Edit request approved and changes applied successfully',
+                'applied_changes': update_data
+            }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/edit-requests/<request_id>/reject', methods=['POST'])
+@token_required
+@admin_required
+def reject_edit_request(current_user, request_id):
+    """Reject an edit request (admin only)"""
+    try:
+        data = request.get_json() or {}
+        
+        # Find the request
+        edit_request = edit_requests_collection.find_one({'request_id': request_id})
+        
+        if not edit_request:
+            return jsonify({
+                'success': False,
+                'message': 'Request not found'
+            }), 404
+        
+        if edit_request['status'] != 'pending':
+            return jsonify({
+                'success': False,
+                'message': 'Request has already been processed'
+            }), 400
+        
+        # Update request status
+        edit_requests_collection.update_one(
+            {'request_id': request_id},
+            {
+                '$set': {
+                    'status': 'rejected',
+                    'processed_by': current_user['_id'],
+                    'processed_at': datetime.now(timezone.utc),
+                    'admin_notes': data.get('admin_notes', ''),
+                    'rejection_reason': data.get('rejection_reason', 'No reason provided')
+                }
+            }
+        )
+        
+        # Log audit
+        log_audit(
+            current_user['_id'],
+            current_user.get('username', 'Unknown'),
+            'reject_edit_request',
+            {
+                'request_id': request_id,
+                'record_id': edit_request['record_id'],
+                'rejection_reason': data.get('rejection_reason', 'No reason provided'),
+                'original_user': edit_request['user_email']
+            }
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Request rejected successfully'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# Add audit logging to existing routes
+def log_audit(user_id, username, action, details=None):
+    """Helper function to log audit events"""
+    try:
+        audit_log = {
+            'audit_id': generate_audit_id(),
+            'user_id': user_id,
+            'username': username,
+            'action': action,
+            'details': details or {},
+            'timestamp': datetime.now(timezone.utc)
+        }
+        audits_collection.insert_one(audit_log)
+    except Exception as e:
+        print(f"Audit logging error: {str(e)}")
+
+if __name__ == '__main__':
+    print("Starting Carbon Accounting API...")
+    print(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
+    app.run(debug=True, host='0.0.0.0', port=5000)

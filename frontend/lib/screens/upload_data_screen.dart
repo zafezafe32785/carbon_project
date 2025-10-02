@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 // import 'package:flutter/foundation.dart';
-// import 'dart:typed_data';
+import 'dart:typed_data';
 import 'package:csv/csv.dart';
 import 'package:excel/excel.dart';
 import '../services/api_service.dart';
+import '../services/upload_service.dart';
+import '../services/localization_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../utils/constants.dart';
+import 'dart:html' as html;
 
 class UploadDataScreen extends StatefulWidget {
   @override
@@ -19,13 +22,13 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
   String _uploadStatus = '';
   List<String> _uploadResults = [];
   String? _selectedFileName;
-
+  final LocalizationService _localization = LocalizationService();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Upload Data'),
+        title: Text(_localization.uploadDataTitle),
         backgroundColor: Colors.green[700],
       ),
       body: SingleChildScrollView(
@@ -68,7 +71,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
                 Icon(Icons.info, color: Colors.blue[700]),
                 SizedBox(width: 8),
                 Text(
-                  'Supported File Types',
+                  _localization.supportedFileTypes,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -85,9 +88,9 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
                 Expanded(
                   child: _buildFileTypeInfo(
                     Icons.table_chart,
-                    'Spreadsheets',
-                    'CSV, Excel (.xlsx, .xls)',
-                    'Bulk emission data import',
+                    _localization.spreadsheets,
+                    _localization.csvExcel,
+                    _localization.bulkEmissionImport,
                     Colors.green,
                   ),
                 ),
@@ -95,9 +98,9 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
                 Expanded(
                   child: _buildFileTypeInfo(
                     Icons.picture_as_pdf,
-                    'PDF Documents',
-                    'Utility bills',
-                    'Automatic data extraction',
+                    _localization.pdfDocuments,
+                    _localization.utilityBills,
+                    _localization.automaticExtraction,
                     Colors.red,
                   ),
                 ),
@@ -109,9 +112,9 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
                 Expanded(
                   child: _buildFileTypeInfo(
                     Icons.camera_alt,
-                    'Images',
-                    'JPG, PNG photos',
-                    'OCR text recognition',
+                    _localization.images,
+                    _localization.jpgPngPhotos,
+                    _localization.ocrTextRecognition,
                     Colors.purple,
                   ),
                 ),
@@ -129,7 +132,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
                         Icon(Icons.info, color: Colors.orange[700], size: 20),
                         SizedBox(height: 4),
                         Text(
-                          'File Size Limit',
+                          _localization.fileSizeLimit,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
@@ -137,7 +140,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
                           ),
                         ),
                         Text(
-                          'Maximum 16 MB',
+                          _localization.maximum16MB,
                           style: TextStyle(
                             fontSize: 10,
                             color: Colors.orange[600],
@@ -227,7 +230,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
               ),
               SizedBox(height: 16),
               Text(
-                'Processing File...',
+                _localization.processingFile,
                 style: TextStyle(
                   fontSize: 18,
                   color: Colors.orange[700],
@@ -254,7 +257,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
               ),
               SizedBox(height: 16),
               Text(
-                'Upload Your Files',
+                _localization.uploadYourFiles,
                 style: TextStyle(
                   fontSize: 20,
                   color: Colors.green[700],
@@ -263,7 +266,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
               ),
               SizedBox(height: 8),
               Text(
-                'CSV • Excel • PDF • Images',
+                _localization.csvExcelPdfImages,
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.green[600],
@@ -271,7 +274,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
               ),
               SizedBox(height: 4),
               Text(
-                'Tap to select files (max 16MB)',
+                _localization.tapToSelectFiles,
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[600],
@@ -303,7 +306,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
                 ),
                 SizedBox(width: 8),
                 Text(
-                  isSuccess ? 'Upload Status' : 'Upload Failed',
+                  isSuccess ? _localization.uploadStatus : _localization.uploadFailed,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -318,7 +321,7 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
             if (_uploadResults.isNotEmpty) ...[
               SizedBox(height: 16),
               Text(
-                'Details:',
+                _localization.details,
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 8),
@@ -356,16 +359,41 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'CSV/Excel Template',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Icon(Icons.download, color: Colors.green[700]),
+                SizedBox(width: 8),
+                Text(
+                  'Download Templates & Guidelines',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
             SizedBox(height: 8),
             Text(
-              'Use this format for spreadsheet uploads:',
+              'Download ready-to-use templates with TGO emission factors',
               style: TextStyle(color: Colors.grey[700]),
             ),
-            SizedBox(height: 12),
+            SizedBox(height: 16),
+            
+            // Template download button
+            ElevatedButton.icon(
+              onPressed: _downloadExcelTemplate,
+              icon: Icon(Icons.insert_drive_file),
+              label: Text('Download Excel Template'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[600],
+                foregroundColor: Colors.white,
+              ),
+            ),
+            SizedBox(height: 16),
+            
+            // Sample data preview
+            Text(
+              'Template Format (4 columns - Date/Category/Amount/Unit):',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
             Container(
               padding: EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -373,25 +401,28 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'date,category,amount,unit,description\n'
-                '2024-01-15,electricity,500,kWh,Office electricity\n'
-                '2024-01-20,transport,150,km,Business travel\n'
-                '2024-01-25,diesel,100,liter,Generator fuel\n'
-                '2024-02-01,natural_gas,50,cubic_meter,Heating\n'
-                '2024-02-05,waste,25,kg,Office waste',
+                'Date,Category,Amount,Unit\n'
+                '15/01/2024,grid_electricity,500,kwh\n'
+                '20/01/2024,gas_diesel_oil,100,litre\n'
+                '25/01/2024,motor_gasoline_catalyst,50,litre\n'
+                '01/02/2024,natural_gas_mj,1500,mj\n'
+                '05/02/2024,lpg_kg,25,kg\n'
+                '10/02/2024,r134a,2,kg',
                 style: TextStyle(
                   fontFamily: 'monospace',
-                  fontSize: 11,
+                  fontSize: 10,
                 ),
               ),
             ),
             SizedBox(height: 12),
+            
+            // Guidelines button
             ElevatedButton.icon(
               onPressed: _showTemplateHelp,
               icon: Icon(Icons.help_outline),
-              label: Text('View Upload Guidelines'),
+              label: Text('View Category Guidelines'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue[600],
+                backgroundColor: Colors.orange[600],
                 foregroundColor: Colors.white,
               ),
             ),
@@ -550,24 +581,16 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
 
         DateTime date = DateTime.parse(dateStr);
         
-        List<String> validCategories = ['electricity', 'diesel', 'gasoline', 'natural_gas', 'waste', 'transport'];
-        if (!validCategories.contains(category)) {
-          results.add('Row ${i + 1}: Invalid category "$category"');
+        // Validate category using TGO emission categories
+        if (!Constants.emissionCategories.contains(category)) {
+          results.add('Row ${i + 1}: Invalid category "$category". Please use TGO categories.');
           errorCount++;
           continue;
         }
 
-        Map<String, String> validUnits = {
-          'electricity': 'kwh',
-          'diesel': 'liter',
-          'gasoline': 'liter',
-          'natural_gas': 'cubic_meter',
-          'waste': 'kg',
-          'transport': 'km',
-        };
-        
-        if (validUnits[category] != unit) {
-          results.add('Row ${i + 1}: Invalid unit "$unit" for category "$category"');
+        // Validate unit matches category using TGO category units
+        if (Constants.categoryUnits[category] != unit) {
+          results.add('Row ${i + 1}: Invalid unit "$unit" for category "$category". Expected "${Constants.categoryUnits[category]}"');
           errorCount++;
           continue;
         }
@@ -707,48 +730,143 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
     }
   }
 
+  // Download Excel template
+  void _downloadExcelTemplate() {
+    try {
+      final excel = Excel.createExcel();
+      
+      // Remove default sheet and create a new one
+      excel.delete('Sheet1');
+      Sheet sheet = excel['TGO_Emissions_Template'];
+      
+      // Get template data
+      final templateData = UploadService.generateExcelTemplateData();
+      
+      // Add data to sheet
+      for (int rowIndex = 0; rowIndex < templateData.length; rowIndex++) {
+        final row = templateData[rowIndex];
+        for (int colIndex = 0; colIndex < row.length; colIndex++) {
+          final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: colIndex, rowIndex: rowIndex));
+          
+          cell.value = TextCellValue(row[colIndex].toString());
+          
+          // Style header row
+          if (rowIndex == 0) {
+            cell.cellStyle = CellStyle(
+              fontColorHex: ExcelColor.white,
+              backgroundColorHex: ExcelColor.green700,
+            );
+          }
+        }
+      }
+      
+      // Auto-fit columns for 4 columns
+      sheet.setColumnWidth(0, 15); // Date column
+      sheet.setColumnWidth(1, 30); // Category column (wider for category names)
+      sheet.setColumnWidth(2, 12); // Amount column
+      sheet.setColumnWidth(3, 12); // Unit column
+      
+      final bytes = excel.encode();
+      if (bytes != null) {
+        final blob = html.Blob([bytes], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        
+        final anchor = html.AnchorElement(href: url);
+        anchor.download = 'tgo_emissions_template.xlsx';
+        anchor.click();
+          
+        html.Url.revokeObjectUrl(url);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Excel template downloaded successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        throw Exception('Failed to encode Excel file');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error downloading Excel template: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _showTemplateHelp() {
+    final categoryGuide = UploadService.getCategoryGuide();
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Upload Guidelines'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Spreadsheet Format:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Required columns: date, category, amount, unit'),
-              Text('• Date format: YYYY-MM-DD (e.g., 2024-01-15)'),
-              Text('• Categories: electricity, diesel, gasoline, natural_gas, waste, transport'),
-              Text('• Units must match categories (kWh, liter, cubic_meter, kg, km)'),
-              SizedBox(height: 16),
-              
-              Text('PDF Documents:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Upload utility bills for automatic processing'),
-              Text('• Clear, readable text works best'),
-              SizedBox(height: 16),
-              
-              Text('Images:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Take clear photos of electricity bills'),
-              Text('• Good lighting and focus important'),
-              Text('• Supports Thai electricity bills (MEA/PEA)'),
-              SizedBox(height: 16),
-              
-              Text('File Limits:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Maximum file size: 16 MB'),
-              Text('• Supported: CSV, Excel, PDF, JPG, PNG'),
-            ],
+        title: Text('TGO Category Guidelines'),
+        content: Container(
+          width: double.maxFinite,
+          height: 500,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TGO Emission Factor Categories',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green[700]),
+                ),
+                SizedBox(height: 16),
+                
+                Text(
+                  'Format Requirements:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text('• Date: DD/MM/YYYY format (e.g., 15/01/2024)'),
+                Text('• Category: Use exact category keys from the guide below'),
+                Text('• Amount: Numeric value (decimal allowed)'),
+                Text('• Unit: Must match the category unit exactly (lowercase)'),
+                SizedBox(height: 20),
+                
+                // Category guide
+                ...categoryGuide.entries.map((scopeEntry) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(8),
+                        margin: EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.green[100],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          scopeEntry.key,
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
+                      ...scopeEntry.value.map((category) {
+                        return Padding(
+                          padding: EdgeInsets.only(left: 16, bottom: 4),
+                          child: Text(
+                            '${category['category']} (${category['unit']}) - ${category['description']}',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }).toList(),
+                      SizedBox(height: 12),
+                    ],
+                  );
+                }).toList(),
+              ],
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Got it'),
+            child: Text('Got it!'),
           ),
         ],
       ),
     );
   }
 }
-
