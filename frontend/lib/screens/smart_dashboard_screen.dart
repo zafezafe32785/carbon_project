@@ -11,6 +11,23 @@ import 'report_generation_screen.dart';
 import 'admin_screen.dart';
 import 'edit_request_screen.dart';
 
+// Helper functions for safe type conversion
+double safeToDouble(dynamic value, {double defaultValue = 0.0}) {
+  if (value == null) return defaultValue;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? defaultValue;
+  return defaultValue;
+}
+
+int safeToInt(dynamic value, {int defaultValue = 0}) {
+  if (value == null) return defaultValue;
+  if (value is int) return value;
+  if (value is double) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? defaultValue;
+  return defaultValue;
+}
+
 class SmartDashboardScreen extends StatefulWidget {
   const SmartDashboardScreen({super.key});
 
@@ -105,8 +122,8 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     List<Map<String, dynamic>> warnings = [];
 
     currentMonth.forEach((category, currentValue) {
-      final current = (currentValue ?? 0).toDouble();
-      final previous = (lastMonth[category] ?? 0).toDouble();
+      final current = safeToDouble(currentValue);
+      final previous = safeToDouble(lastMonth[category]);
 
       // Only warn if there was previous data and current is significantly higher
       if (previous > 0 && current > previous) {
@@ -805,10 +822,10 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     // Find max value for Y axis
     double maxY = 0;
     for (var data in monthlyData) {
-      if (data['total'] > maxY) maxY = data['total'].toDouble();
+      if (safeToDouble(data['total']) > maxY) maxY = safeToDouble(data['total']);
     }
     for (var data in lastYearData) {
-      if (data['total'] > maxY) maxY = data['total'].toDouble();
+      if (safeToDouble(data['total']) > maxY) maxY = safeToDouble(data['total']);
     }
     maxY = maxY * 1.2; // Add 20% padding
     
@@ -919,7 +936,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                         spots: monthlyData.asMap().entries.map((entry) {
                           return FlSpot(
                             entry.key.toDouble(),
-                            (entry.value['total'] ?? 0).toDouble(),
+                            safeToDouble(entry.value['total']),
                           );
                         }).toList(),
                         isCurved: true,
@@ -945,7 +962,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                         spots: lastYearData.asMap().entries.map((entry) {
                           return FlSpot(
                             entry.key.toDouble(),
-                            (entry.value['total'] ?? 0).toDouble(),
+                            safeToDouble(entry.value['total']),
                           );
                         }).toList(),
                         isCurved: true,
@@ -973,7 +990,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     // Normalize and merge duplicate categories
     final normalizedCategoryData = <String, double>{};
     for (final entry in categoryData.entries) {
-      final value = (entry.value ?? 0).toDouble();
+      final value = safeToDouble(entry.value);
       if (value > 0.01) { // Filter out very small values
         // Normalize category key: lowercase, replace spaces/dashes/parentheses with underscores
         String normalizedKey = entry.key.toString()
@@ -1134,11 +1151,11 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
 
     double maxY = 0;
     for (var data in displayData) {
-      if (data['total'] > maxY) maxY = data['total'].toDouble();
+      if (safeToDouble(data['total']) > maxY) maxY = safeToDouble(data['total']);
     }
     if (_showComparison) {
       for (var data in displayLastYear) {
-        if (data['total'] > maxY) maxY = data['total'].toDouble();
+        if (safeToDouble(data['total']) > maxY) maxY = safeToDouble(data['total']);
       }
     }
     maxY = maxY * 1.2;
@@ -1289,11 +1306,11 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
 
     double maxY = 0;
     for (var data in displayData) {
-      if (data['total'] > maxY) maxY = data['total'].toDouble();
+      if (safeToDouble(data['total']) > maxY) maxY = safeToDouble(data['total']);
     }
     if (_showComparison) {
       for (var data in displayLastYear) {
-        if (data['total'] > maxY) maxY = data['total'].toDouble();
+        if (safeToDouble(data['total']) > maxY) maxY = safeToDouble(data['total']);
       }
     }
     maxY = maxY * 1.2;
@@ -1424,7 +1441,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
 
     for (final entry in categoryData.entries) {
       final categoryName = entry.key.toString().toLowerCase();
-      final value = (entry.value ?? 0).toDouble();
+      final value = safeToDouble(entry.value);
 
       final scope = Constants.getCategoryScope(categoryName);
       if (scope == 1) {
@@ -1592,7 +1609,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
 
     for (final entry in categoryData.entries) {
       final categoryName = entry.key.toString().toLowerCase();
-      final value = (entry.value ?? 0).toDouble();
+      final value = safeToDouble(entry.value);
 
       final scope = Constants.getCategoryScope(categoryName);
       if (scope == 1) {
@@ -2330,7 +2347,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
 
     for (final entry in categoryData.entries) {
       final categoryName = entry.key.toString().toLowerCase();
-      final value = (entry.value ?? 0).toDouble();
+      final value = safeToDouble(entry.value);
 
       final scope = Constants.getCategoryScope(categoryName);
       if (scope == 1) {
@@ -2954,7 +2971,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     // Normalize and merge duplicate categories
     final normalizedCategoryData = <String, double>{};
     for (final entry in categoryData.entries) {
-      final value = (entry.value ?? 0).toDouble();
+      final value = safeToDouble(entry.value);
       if (value > 0.01) { // Filter out very small values
         // Normalize category key: lowercase, replace spaces/dashes/parentheses with underscores
         String normalizedKey = entry.key.toString()
@@ -3521,7 +3538,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     // Categorize emissions by scope based on category names and TGO structure
     for (final entry in categoryData.entries) {
       final categoryName = entry.key.toString().toLowerCase();
-      final value = (entry.value ?? 0).toDouble();
+      final value = safeToDouble(entry.value);
 
       final scope = Constants.getCategoryScope(categoryName);
       if (scope == 1) {

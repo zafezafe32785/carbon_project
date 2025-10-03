@@ -62,13 +62,18 @@ class ApiService {
       
       print('Response status: ${response.statusCode}');
       print('Response body: ${response.body}');
-      
-      final data = json.decode(response.body);
-      
-      if (response.statusCode == 201) {
-        return {'success': true, 'message': data['message']};
-      } else {
-        return {'success': false, 'message': data['message'] ?? 'Registration failed'};
+
+      try {
+        final data = json.decode(response.body);
+
+        if (response.statusCode == 201) {
+          return {'success': true, 'message': data['message'] ?? 'Registration successful'};
+        } else {
+          return {'success': false, 'message': data['message'] ?? 'Registration failed'};
+        }
+      } on FormatException catch (e) {
+        print('JSON parsing error: $e');
+        return {'success': false, 'message': 'Invalid server response'};
       }
     } catch (e) {
       print('Registration error: $e');
@@ -95,25 +100,35 @@ class ApiService {
       
       print('API Login - Status Code: ${response.statusCode}');
       print('API Login - Response Body: ${response.body}');
-      
-      final data = json.decode(response.body);
-      
-      if (response.statusCode == 200) {
-        // Save token and user info
-        await saveToken(data['token']);
-        
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_id', data['user_id']);
-        await prefs.setString('email', data['email']);
-        await prefs.setString('organization', data['organization'] ?? '');
-        
-        return {
-          'success': true,
-          'token': data['token'],
-          'user_id': data['user_id'],
-        };
-      } else {
-        return {'success': false, 'message': data['message'] ?? 'Login failed'};
+
+      try {
+        final data = json.decode(response.body);
+
+        if (response.statusCode == 200) {
+          // Validate required fields exist
+          if (data['token'] == null || data['user_id'] == null) {
+            return {'success': false, 'message': 'Invalid server response: missing token or user_id'};
+          }
+
+          // Save token and user info
+          await saveToken(data['token']);
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_id', data['user_id']);
+          await prefs.setString('email', data['email'] ?? '');
+          await prefs.setString('organization', data['organization'] ?? '');
+
+          return {
+            'success': true,
+            'token': data['token'],
+            'user_id': data['user_id'],
+          };
+        } else {
+          return {'success': false, 'message': data['message'] ?? 'Login failed'};
+        }
+      } on FormatException catch (e) {
+        print('JSON parsing error: $e');
+        return {'success': false, 'message': 'Invalid server response'};
       }
     } catch (e) {
       print('Login error: $e');
@@ -125,10 +140,10 @@ class ApiService {
   static Future<Map<String, dynamic>> getDashboardData() async {
     try {
       final token = await getToken();
-      if  (token == null) {
+      if (token == null) {
         return {'success': false, 'message': 'Not authenticated'};
       }
-    
+
       final response = await http.get(
         Uri.parse('${Constants.apiUrl}/dashboard'),
         headers: {
@@ -136,16 +151,21 @@ class ApiService {
           'Authorization': 'Bearer $token',
         },
       );
-    
+
       print('Dashboard response status: ${response.statusCode}');
       print('Dashboard response body: ${response.body}');
-    
+
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
+        try {
+          final data = json.decode(response.body);
+          return {
+            'success': true,
+            'data': data,
+          };
+        } on FormatException catch (e) {
+          print('JSON parsing error: $e');
+          return {'success': false, 'message': 'Invalid server response'};
+        }
       } else if (response.statusCode == 401) {
         // Don't automatically clear token on 401, let the user decide
         return {'success': false, 'message': 'Session expired'};
@@ -186,17 +206,22 @@ class ApiService {
           'year': year,
         }),
       );
-      
-      final data = json.decode(response.body);
-      
-      if (response.statusCode == 201) {
-        return {
-          'success': true,
-          'message': data['message'],
-          'co2_equivalent': data['co2_equivalent'],
-        };
-      } else {
-        return {'success': false, 'message': data['message'] ?? 'Failed to add emission'};
+
+      try {
+        final data = json.decode(response.body);
+
+        if (response.statusCode == 201) {
+          return {
+            'success': true,
+            'message': data['message'] ?? 'Emission added successfully',
+            'co2_equivalent': data['co2_equivalent'],
+          };
+        } else {
+          return {'success': false, 'message': data['message'] ?? 'Failed to add emission'};
+        }
+      } on FormatException catch (e) {
+        print('JSON parsing error: $e');
+        return {'success': false, 'message': 'Invalid server response'};
       }
     } catch (e) {
       return {'success': false, 'message': 'Connection error: $e'};
@@ -218,13 +243,18 @@ class ApiService {
           'Authorization': 'Bearer $token',
         },
       );
-      
-      final data = json.decode(response.body);
-      
-      if (response.statusCode == 200) {
-        return data;
-      } else {
-        return {'success': false, 'message': data['message'] ?? 'Request failed'};
+
+      try {
+        final data = json.decode(response.body);
+
+        if (response.statusCode == 200) {
+          return data;
+        } else {
+          return {'success': false, 'message': data['message'] ?? 'Request failed'};
+        }
+      } on FormatException catch (e) {
+        print('JSON parsing error in GET: $e');
+        return {'success': false, 'message': 'Invalid server response'};
       }
     } catch (e) {
       return {'success': false, 'message': 'Connection error: $e'};
@@ -247,13 +277,18 @@ class ApiService {
         },
         body: json.encode(body),
       );
-      
-      final data = json.decode(response.body);
-      
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return data;
-      } else {
-        return {'success': false, 'message': data['message'] ?? 'Request failed'};
+
+      try {
+        final data = json.decode(response.body);
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          return data;
+        } else {
+          return {'success': false, 'message': data['message'] ?? 'Request failed'};
+        }
+      } on FormatException catch (e) {
+        print('JSON parsing error in POST: $e');
+        return {'success': false, 'message': 'Invalid server response'};
       }
     } catch (e) {
       return {'success': false, 'message': 'Connection error: $e'};
@@ -277,13 +312,18 @@ class ApiService {
           'Authorization': 'Bearer $token',
         },
       );
-      
-      final data = json.decode(response.body);
-      
-      if (response.statusCode == 200) {
-        return {'success': true, 'data': data['users']};
-      } else {
-        return {'success': false, 'message': data['message'] ?? 'Failed to load users'};
+
+      try {
+        final data = json.decode(response.body);
+
+        if (response.statusCode == 200) {
+          return {'success': true, 'data': data['users']};
+        } else {
+          return {'success': false, 'message': data['message'] ?? 'Failed to load users'};
+        }
+      } on FormatException catch (e) {
+        print('JSON parsing error: $e');
+        return {'success': false, 'message': 'Invalid server response'};
       }
     } catch (e) {
       return {'success': false, 'message': 'Connection error: $e'};

@@ -17,7 +17,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.fonts import addMapping
 import urllib.request
-from models import emission_records_collection, users_collection, reports_collection
+from models import emission_records_collection, users_collection, reports_collection, emission_factors_collection, calculate_co2_equivalent
 from bson import ObjectId
 
 # Configure OpenAI API
@@ -34,29 +34,13 @@ class CarbonReportGenerator:
         self.supported_formats = ['GHG']
         self.supported_file_types = ['PDF', 'EXCEL', 'WORD']
         self.supported_languages = ['EN', 'TH']
-        
-        # Emission scope classification per GHG Protocol
-        self.scope_classification = {
-            'electricity': 2,
-            'fuel': 1,
-            'diesel': 1,
-            'gasoline': 1,
-            'natural_gas': 1,
-            'transport': 3,
-            'waste': 3,
-            'other': 3
-        }
-        
-        # Standard emission factors
-        self.emission_factors = {
-            'electricity': 0.233,  # kg CO2e/kWh
-            'fuel': 2.68,         # kg CO2e/liter
-            'diesel': 2.68,       # kg CO2e/liter
-            'gasoline': 2.31,     # kg CO2e/liter
-            'natural_gas': 1.92,  # kg CO2e/m³
-            'transport': 0.12,    # kg CO2e/km
-            'waste': 0.467        # kg CO2e/kg
-        }
+
+        # NOTE: Emission data is reused from smart_dashboard
+        # All CO2 calculations are already done using TGO emission factors
+        # Reports only separate by Scope 1 and Scope 2 (Scope 3 removed per project requirement)
+        #
+        # Scope 1: Direct emissions (fuels, refrigerants, combustion)
+        # Scope 2: Indirect emissions from purchased electricity/energy
 
     def generate_report(self, user_id: str, start_date: str, end_date: str, 
                        report_format: str = 'GHG', file_type: str = 'PDF', 
@@ -117,42 +101,58 @@ class CarbonReportGenerator:
             }
 
     def _collect_emission_data(self, user_id: str, start_date: str, end_date: str) -> Dict:
-        """Collect and process emission data from database"""
-        
+        """
+        Collect and process emission data from database
+        Reuses the same data collection logic as smart_dashboard for consistency
+        All CO2 calculations are already done using TGO factors
+        """
+
         # Parse dates
         start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
         end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-        
+
         # Get user information
         user = users_collection.find_one({'_id': ObjectId(user_id)})
         organization = user.get('organization', 'Unknown Organization') if user else 'Unknown Organization'
-        
-        # Query emission records
+
+        # Query emission records (same as dashboard - data already has co2_equivalent calculated)
         emissions = list(emission_records_collection.find({
             'user_id': ObjectId(user_id),
             'record_date': {'$gte': start_dt, '$lte': end_dt}
         }))
-        
-        # Process data
-        total_emissions = sum(e.get('co2_equivalent', 0) for e in emissions)
-        
-        # Group by category
+
+        print(f"Found {len(emissions)} emission records for report period")
+
+        # Total emissions (already calculated with TGO factors in dashboard)
+        total_emissions = sum(float(e.get('co2_equivalent', 0)) for e in emissions)
+
+        # Group by category (same as dashboard)
         emissions_by_category = {}
         for emission in emissions:
             category = emission.get('category', 'other')
-            emissions_by_category[category] = emissions_by_category.get(category, 0) + emission.get('co2_equivalent', 0)
-        
-        # Group by GHG Protocol scopes
-        emissions_by_scope = {'Scope 1': 0, 'Scope 2': 0, 'Scope 3': 0}
+            co2_value = float(emission.get('co2_equivalent', 0))
+            emissions_by_category[category] = emissions_by_category.get(category, 0) + co2_value
+
+        # Group by GHG Protocol scopes (Scope 1 and 2 only as per project requirement)
+        emissions_by_scope = {'Scope 1': 0, 'Scope 2': 0}
+
         for emission in emissions:
-            category = emission.get('category', 'other')
-            scope = self.scope_classification.get(category, 3)
-            scope_key = f"Scope {scope}"
-            emissions_by_scope[scope_key] += emission.get('co2_equivalent', 0)
-        
-        # Calculate monthly breakdown
+            category = emission.get('category', 'other').lower()
+            co2_value = float(emission.get('co2_equivalent', 0))
+
+            # Determine scope based on category
+            # Scope 2: Electricity and purchased energy
+            if any(keyword in category for keyword in ['electric', 'grid', 'power', 'energy']):
+                emissions_by_scope['Scope 2'] += co2_value
+            # Scope 1: Everything else (direct emissions - fuels, refrigerants, etc.)
+            else:
+                emissions_by_scope['Scope 1'] += co2_value
+
+        print(f"Scope breakdown: Scope 1 = {emissions_by_scope['Scope 1']}, Scope 2 = {emissions_by_scope['Scope 2']}")
+
+        # Calculate monthly breakdown (same logic as dashboard)
         monthly_data = self._calculate_monthly_breakdown(emissions, start_dt, end_dt)
-        
+
         return {
             'user_id': user_id,
             'organization': organization,
@@ -536,9 +536,13 @@ class CarbonReportGenerator:
 
     def _get_fallback_trend_analysis(self, report_data: Dict, language: str = 'EN') -> str:
         """Fallback trend analysis"""
+        # Validate monthly_data exists and has sufficient entries
+        if not report_data.get('monthly_data') or len(report_data['monthly_data']) < 1:
+            return "Insufficient data available for trend analysis." if language == 'EN' else "ข้อมูลไม่เพียงพอสำหรับการวิเคราะห์แนวโน้ม"
+
         if len(report_data['monthly_data']) > 1:
-            first_month = report_data['monthly_data'][0]['total']
-            last_month = report_data['monthly_data'][-1]['total']
+            first_month = report_data['monthly_data'][0].get('total', 0)
+            last_month = report_data['monthly_data'][-1].get('total', 0)
             
             if language == 'TH':
                 if last_month > first_month:
@@ -656,15 +660,13 @@ class CarbonReportGenerator:
                 'executive_summary_title': 'บทสรุปผู้บริหาร',
                 'scope_1_title': 'การปล่อยทางตรง (Scope 1)',
                 'scope_2_title': 'การปล่อยทางอ้อมจากพลังงาน (Scope 2)',
-                'scope_3_title': 'การปล่อยทางอ้อมอื่นๆ (Scope 3)',
                 'key_findings_title': 'ผลการวิเคราะห์สำคัญ',
                 'recommendations_title': 'ข้อเสนอแนะ',
                 'methodology_title': 'วิธีการคำนวณ',
                 'compliance_title': 'การปฏิบัติตามมาตรฐาน',
                 'scope_descriptions': {
-                    'Scope 1': 'การปล่อยก๊าซเรือนกระจกโดยตรงจากแหล่งที่องค์กรเป็นเจ้าของหรือควบคุม',
-                    'Scope 2': 'การปล่อยก๊าซเรือนกระจกทางอ้อมจากการใช้พลังงานไฟฟ้า ความร้อน หรือไอน้ำ',
-                    'Scope 3': 'การปล่อยก๊าซเรือนกระจกทางอ้อมอื่นๆ ในห่วงโซ่คุณค่าขององค์กร'
+                    'Scope 1': 'การปล่อยก๊าซเรือนกระจกโดยตรงจากแหล่งที่องค์กรเป็นเจ้าของหรือควบคุม (เชื้อเพลิง สารทำความเย็น การเผาไหม้)',
+                    'Scope 2': 'การปล่อยก๊าซเรือนกระจกทางอ้อมจากการซื้อพลังงานไฟฟ้า'
                 }
             }
         else:  # English
@@ -673,15 +675,13 @@ class CarbonReportGenerator:
                 'executive_summary_title': 'Executive Summary',
                 'scope_1_title': 'Scope 1 Direct Emissions',
                 'scope_2_title': 'Scope 2 Indirect Emissions from Energy',
-                'scope_3_title': 'Scope 3 Other Indirect Emissions',
                 'key_findings_title': 'Key Findings',
                 'recommendations_title': 'Recommendations',
                 'methodology_title': 'Methodology',
                 'compliance_title': 'Compliance Notes',
                 'scope_descriptions': {
-                    'Scope 1': 'Direct greenhouse gas emissions from sources owned or controlled by the organization',
-                    'Scope 2': 'Indirect greenhouse gas emissions from purchased electricity, heat, or steam',
-                    'Scope 3': 'Other indirect greenhouse gas emissions in the organization\'s value chain'
+                    'Scope 1': 'Direct greenhouse gas emissions from sources owned or controlled by the organization (fuels, refrigerants, combustion)',
+                    'Scope 2': 'Indirect greenhouse gas emissions from purchased electricity'
                 }
             }
 
@@ -898,7 +898,7 @@ class CarbonReportGenerator:
                 
                 # Special handling for common technical terms
                 technical_terms = [
-                    'GHG Protocol', 'ISO 14064', 'CO2e', 'Scope 1', 'Scope 2', 'Scope 3',
+                    'GHG Protocol', 'ISO 14064', 'CO2e', 'Scope 1', 'Scope 2', 'TGO',
                     'operational efficiency', 'energy management system', 'direct emissions',
                     'indirect emissions', 'Corporate Accounting', 'Reporting Standard'
                 ]
@@ -1437,7 +1437,7 @@ class CarbonReportGenerator:
                 # Scope descriptions first
                 for scope, value in content['emissions_by_scope'].items():
                     if value > 0:
-                        description = template['scope_descriptions'][scope]
+                        description = template.get('scope_descriptions', {}).get(scope, f'Description for {scope} not available')
                         story.append(Paragraph(f"{scope}: {description}", styles.get(normal_style_name, styles['Normal'])))
                         total_text = f"รวม: {value:.2f} kg CO2e" if language == 'TH' else f"Total: {value:.2f} kg CO2e"
                         story.append(Paragraph(total_text, styles.get(normal_style_name, styles['Normal'])))
@@ -1785,7 +1785,7 @@ class CarbonReportGenerator:
                     desc_run = desc_para.add_run(f"{scope}: ")
                     desc_run.bold = True
                     desc_run.font.color.rgb = RGBColor(0, 54, 146)
-                    desc_para.add_run(template['scope_descriptions'][scope])
+                    desc_para.add_run(template.get('scope_descriptions', {}).get(scope, f'Description for {scope} not available'))
                     desc_para.style.font.size = Pt(10)
             
             doc.add_paragraph()  # Add space
@@ -1884,9 +1884,26 @@ class CarbonReportGenerator:
                          file_type: str, language: str) -> str:
         """Save report to database using your MongoDB schema"""
         
-        # Generate report ID
-        report_count = reports_collection.count_documents({})
-        report_id = f"RPT{str(report_count + 1).zfill(3)}"
+        # Generate unique report ID by finding the highest existing number
+        # This prevents skipping numbers even with concurrent requests
+        latest_report = reports_collection.find_one(
+            {"report_id": {"$regex": "^RPT[0-9]+$"}},
+            sort=[("report_id", -1)]
+        )
+
+        if latest_report and 'report_id' in latest_report:
+            # Extract the number from the last report ID (e.g., "RPT005" -> 5)
+            try:
+                last_number = int(latest_report['report_id'].replace('RPT', ''))
+                next_number = last_number + 1
+            except ValueError:
+                # Fallback if parsing fails
+                next_number = reports_collection.count_documents({}) + 1
+        else:
+            # No reports exist yet, start with 1
+            next_number = 1
+
+        report_id = f"RPT{str(next_number).zfill(3)}"
         
         # Parse dates for period structure
         start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
