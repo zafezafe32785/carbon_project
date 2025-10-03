@@ -1,9 +1,0 @@
-date,category,amount,unit,description
-2024-01-15,grid_electricity,500,kWh,Office electricity usage
-2024-01-16,lpg_kg,5,kg,Kitchen gas usage
-2024-01-17,cng,20,kg,CNG vehicle fuel
-2024-01-18,r134a,1.5,kg,Air conditioning refrigerant leak
-2024-01-19,r22,0.8,kg,Old AC system refrigerant
-2024-01-20,gas_diesel_oil,100,litre,Generator fuel
-2024-01-21,motor_gasoline_catalyst,60,litre,Company car fuel
-2024-01-22,diesel_agriculture,40,litre,Tractor diesel
