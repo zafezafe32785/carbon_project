@@ -24,6 +24,12 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   double _monthlyTarget = 5000; // Default target
   String _selectedScope = 'All'; // For bar chart filtering
 
+  // Chart visualization preferences
+  String _trendChartType = 'line'; // line, bar, area
+  String _categoryChartType = 'pie'; // pie, bar, donut
+  String _timeRange = 'year'; // year, 6months, 3months
+  bool _showComparison = true; // Show previous year comparison
+
   @override
   void initState() {
     super.initState();
@@ -1111,6 +1117,700 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     return scope2Keywords.any((keyword) => categoryName.contains(keyword));
   }
 
+  // Enhanced Chart Implementations
+  Widget _buildEnhancedLineChart() {
+    final monthlyData = _dashboardData['monthly_trend'] as List? ?? [];
+    final lastYearData = _dashboardData['last_year_trend'] as List? ?? [];
+
+    List<dynamic> displayData = _getFilteredMonthlyData(monthlyData);
+    List<dynamic> displayLastYear = _getFilteredMonthlyData(lastYearData);
+
+    final hasCurrentYearData = displayData.any((m) => (m['total'] ?? 0) > 0);
+    final hasLastYearData = displayLastYear.any((m) => (m['total'] ?? 0) > 0);
+
+    if (!hasCurrentYearData && !hasLastYearData) {
+      return _buildEmptyChartState();
+    }
+
+    double maxY = 0;
+    for (var data in displayData) {
+      if (data['total'] > maxY) maxY = data['total'].toDouble();
+    }
+    if (_showComparison) {
+      for (var data in displayLastYear) {
+        if (data['total'] > maxY) maxY = data['total'].toDouble();
+      }
+    }
+    maxY = maxY * 1.2;
+
+    return SizedBox(
+      height: 280,
+      child: LineChart(
+        LineChartData(
+          maxY: maxY > 0 ? maxY : 100,
+          minY: 0,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: maxY / 5,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.grey[200]!,
+                strokeWidth: 1,
+                dashArray: [5, 5],
+              );
+            },
+          ),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 50,
+                getTitlesWidget: (value, meta) {
+                  if (value == 0) return const Text('0');
+                  return Text(
+                    '${(value / 1000).toStringAsFixed(1)}k',
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final months = _getMonthLabels();
+                  if (value.toInt() >= 0 && value.toInt() < months.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        months[value.toInt()],
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          lineTouchData: LineTouchData(
+            enabled: true,
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  final month = _getMonthLabels()[spot.x.toInt()];
+                  final year = spot.barIndex == 0
+                      ? _dashboardData['current_year']
+                      : _dashboardData['last_year'];
+                  return LineTooltipItem(
+                    '$month $year\n${spot.y.toStringAsFixed(0)} kg CO₂',
+                    const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  );
+                }).toList();
+              },
+            ),
+          ),
+          lineBarsData: [
+            if (hasCurrentYearData)
+              LineChartBarData(
+                spots: displayData.asMap().entries.map((entry) {
+                  return FlSpot(
+                    entry.key.toDouble(),
+                    (entry.value['total'] ?? 0).toDouble(),
+                  );
+                }).toList(),
+                isCurved: true,
+                curveSmoothness: 0.3,
+                color: const Color(0xFF059669),
+                barWidth: 3,
+                dotData: FlDotData(
+                  show: true,
+                  getDotPainter: (spot, percent, barData, index) {
+                    return FlDotCirclePainter(
+                      radius: 5,
+                      color: const Color(0xFF059669),
+                      strokeWidth: 2,
+                      strokeColor: Colors.white,
+                    );
+                  },
+                ),
+                shadow: const Shadow(
+                  color: Color(0xFF059669),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ),
+            if (hasLastYearData && _showComparison)
+              LineChartBarData(
+                spots: displayLastYear.asMap().entries.map((entry) {
+                  return FlSpot(
+                    entry.key.toDouble(),
+                    (entry.value['total'] ?? 0).toDouble(),
+                  );
+                }).toList(),
+                isCurved: true,
+                curveSmoothness: 0.3,
+                color: Colors.grey[400],
+                barWidth: 2,
+                dashArray: [8, 4],
+                dotData: const FlDotData(show: false),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEnhancedAreaChart() {
+    final monthlyData = _dashboardData['monthly_trend'] as List? ?? [];
+    final lastYearData = _dashboardData['last_year_trend'] as List? ?? [];
+
+    List<dynamic> displayData = _getFilteredMonthlyData(monthlyData);
+    List<dynamic> displayLastYear = _getFilteredMonthlyData(lastYearData);
+
+    final hasCurrentYearData = displayData.any((m) => (m['total'] ?? 0) > 0);
+    final hasLastYearData = displayLastYear.any((m) => (m['total'] ?? 0) > 0);
+
+    if (!hasCurrentYearData && !hasLastYearData) {
+      return _buildEmptyChartState();
+    }
+
+    double maxY = 0;
+    for (var data in displayData) {
+      if (data['total'] > maxY) maxY = data['total'].toDouble();
+    }
+    if (_showComparison) {
+      for (var data in displayLastYear) {
+        if (data['total'] > maxY) maxY = data['total'].toDouble();
+      }
+    }
+    maxY = maxY * 1.2;
+
+    return SizedBox(
+      height: 280,
+      child: LineChart(
+        LineChartData(
+          maxY: maxY > 0 ? maxY : 100,
+          minY: 0,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.grey[200]!,
+                strokeWidth: 1,
+              );
+            },
+          ),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 50,
+                getTitlesWidget: (value, meta) {
+                  if (value == 0) return const Text('0');
+                  return Text(
+                    '${(value / 1000).toStringAsFixed(1)}k',
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final months = _getMonthLabels();
+                  if (value.toInt() >= 0 && value.toInt() < months.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        months[value.toInt()],
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          lineBarsData: [
+            if (hasCurrentYearData)
+              LineChartBarData(
+                spots: displayData.asMap().entries.map((entry) {
+                  return FlSpot(
+                    entry.key.toDouble(),
+                    (entry.value['total'] ?? 0).toDouble(),
+                  );
+                }).toList(),
+                isCurved: true,
+                curveSmoothness: 0.35,
+                color: const Color(0xFF059669),
+                barWidth: 3,
+                dotData: FlDotData(
+                  show: true,
+                  getDotPainter: (spot, percent, barData, index) {
+                    return FlDotCirclePainter(
+                      radius: 4,
+                      color: const Color(0xFF059669),
+                      strokeWidth: 2,
+                      strokeColor: Colors.white,
+                    );
+                  },
+                ),
+                belowBarData: BarAreaData(
+                  show: true,
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF059669).withOpacity(0.4),
+                      const Color(0xFF059669).withOpacity(0.1),
+                      const Color(0xFF059669).withOpacity(0.0),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+              ),
+            if (hasLastYearData && _showComparison)
+              LineChartBarData(
+                spots: displayLastYear.asMap().entries.map((entry) {
+                  return FlSpot(
+                    entry.key.toDouble(),
+                    (entry.value['total'] ?? 0).toDouble(),
+                  );
+                }).toList(),
+                isCurved: true,
+                curveSmoothness: 0.35,
+                color: Colors.grey[400],
+                barWidth: 2,
+                dashArray: [5, 5],
+                dotData: const FlDotData(show: false),
+                belowBarData: BarAreaData(
+                  show: true,
+                  color: Colors.grey[300]!.withOpacity(0.15),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScopeDonutChart() {
+    final categoryData = _dashboardData['category_breakdown'] as Map? ?? {};
+
+    double scope1Total = 0.0;
+    double scope2Total = 0.0;
+
+    for (final entry in categoryData.entries) {
+      final categoryName = entry.key.toString().toLowerCase();
+      final value = (entry.value ?? 0).toDouble();
+
+      final scope = Constants.getCategoryScope(categoryName);
+      if (scope == 1) {
+        scope1Total += value;
+      } else if (scope == 2) {
+        scope2Total += value;
+      } else {
+        if (_containsScope2Keywords(categoryName)) {
+          scope2Total += value;
+        } else if (_containsScope1Keywords(categoryName)) {
+          scope1Total += value;
+        } else {
+          if (categoryName.contains('electric') || categoryName.contains('grid') || categoryName.contains('power')) {
+            scope2Total += value;
+          } else {
+            scope1Total += value;
+          }
+        }
+      }
+    }
+
+    final total = scope1Total + scope2Total;
+
+    if (total <= 0) {
+      return _buildEmptyChartState();
+    }
+
+    return SizedBox(
+      height: 280,
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: PieChart(
+              PieChartData(
+                centerSpaceRadius: 80,
+                sectionsSpace: 3,
+                sections: [
+                  PieChartSectionData(
+                    value: scope1Total,
+                    title: '${(scope1Total / total * 100).toStringAsFixed(1)}%',
+                    color: const Color(0xFFEF4444),
+                    radius: 60,
+                    titleStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  PieChartSectionData(
+                    value: scope2Total,
+                    title: '${(scope2Total / total * 100).toStringAsFixed(1)}%',
+                    color: const Color(0xFF3B82F6),
+                    radius: 60,
+                    titleStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDonutLegendItem(
+                  'Scope 1',
+                  scope1Total,
+                  total,
+                  const Color(0xFFEF4444),
+                ),
+                const SizedBox(height: 16),
+                _buildDonutLegendItem(
+                  'Scope 2',
+                  scope2Total,
+                  total,
+                  const Color(0xFF3B82F6),
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Total',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${total.toStringAsFixed(0)} kg',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDonutLegendItem(String label, double value, double total, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(left: 24),
+          child: Text(
+            '${value.toStringAsFixed(0)} kg',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScopeBarChart() {
+    final categoryData = _dashboardData['category_breakdown'] as Map? ?? {};
+
+    double scope1Total = 0.0;
+    double scope2Total = 0.0;
+
+    for (final entry in categoryData.entries) {
+      final categoryName = entry.key.toString().toLowerCase();
+      final value = (entry.value ?? 0).toDouble();
+
+      final scope = Constants.getCategoryScope(categoryName);
+      if (scope == 1) {
+        scope1Total += value;
+      } else if (scope == 2) {
+        scope2Total += value;
+      } else {
+        if (_containsScope2Keywords(categoryName)) {
+          scope2Total += value;
+        } else if (_containsScope1Keywords(categoryName)) {
+          scope1Total += value;
+        } else {
+          if (categoryName.contains('electric') || categoryName.contains('grid') || categoryName.contains('power')) {
+            scope2Total += value;
+          } else {
+            scope1Total += value;
+          }
+        }
+      }
+    }
+
+    final total = scope1Total + scope2Total;
+
+    if (total <= 0) {
+      return _buildEmptyChartState();
+    }
+
+    final maxY = (scope1Total > scope2Total ? scope1Total : scope2Total) * 1.2;
+
+    return SizedBox(
+      height: 280,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxY,
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                final label = groupIndex == 0 ? 'Scope 1' : 'Scope 2';
+                return BarTooltipItem(
+                  '$label\n${rod.toY.toStringAsFixed(0)} kg CO₂',
+                  const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                );
+              },
+            ),
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  switch (value.toInt()) {
+                    case 0:
+                      return const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Scope 1',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    case 1:
+                      return const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Scope 2',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    default:
+                      return const Text('');
+                  }
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 50,
+                getTitlesWidget: (value, meta) {
+                  return Text(
+                    '${(value / 1000).toStringAsFixed(1)}k',
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  );
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.grey[200]!,
+                strokeWidth: 1,
+              );
+            },
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups: [
+            BarChartGroupData(
+              x: 0,
+              barRods: [
+                BarChartRodData(
+                  toY: scope1Total,
+                  color: const Color(0xFFEF4444),
+                  width: 60,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(8),
+                  ),
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFFEF4444),
+                      const Color(0xFFEF4444).withOpacity(0.7),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+              ],
+            ),
+            BarChartGroupData(
+              x: 1,
+              barRods: [
+                BarChartRodData(
+                  toY: scope2Total,
+                  color: const Color(0xFF3B82F6),
+                  width: 60,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(8),
+                  ),
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF3B82F6),
+                      const Color(0xFF3B82F6).withOpacity(0.7),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyChartState() {
+    return SizedBox(
+      height: 280,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.insert_chart_outlined, size: 60, color: Colors.grey[300]),
+            const SizedBox(height: 12),
+            Text(
+              'No data available',
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<dynamic> _getFilteredMonthlyData(List<dynamic> yearData) {
+    if (_timeRange == '3months') {
+      final now = DateTime.now();
+      final currentMonth = now.month - 1;
+      final startMonth = (currentMonth - 2).clamp(0, 11);
+      return yearData.sublist(startMonth, currentMonth + 1);
+    } else if (_timeRange == '6months') {
+      final now = DateTime.now();
+      final currentMonth = now.month - 1;
+      final startMonth = (currentMonth - 5).clamp(0, 11);
+      return yearData.sublist(startMonth, currentMonth + 1);
+    }
+    return yearData;
+  }
+
+  List<String> _getMonthLabels() {
+    const allMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    if (_timeRange == '3months') {
+      final now = DateTime.now();
+      final currentMonth = now.month - 1;
+      final startMonth = (currentMonth - 2).clamp(0, 11);
+      return allMonths.sublist(startMonth, currentMonth + 1);
+    } else if (_timeRange == '6months') {
+      final now = DateTime.now();
+      final currentMonth = now.month - 1;
+      final startMonth = (currentMonth - 5).clamp(0, 11);
+      return allMonths.sublist(startMonth, currentMonth + 1);
+    }
+    return allMonths;
+  }
+
   // Modern UI Components
   PreferredSizeWidget _buildModernAppBar(LocalizationService localization) {
     return AppBar(
@@ -1894,19 +2594,355 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Analytics',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Analytics',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            _buildChartTypeSelector(),
+          ],
         ),
         const SizedBox(height: 16),
-        _buildMonthlyBarChart(),
+
+        // Trend Chart with Type Selection
+        _buildTrendChartCard(),
         const SizedBox(height: 16),
-        _buildScopeComparisonPieChart(),
+
+        // Category Breakdown with Type Selection
+        _buildCategoryChartCard(),
       ],
+    );
+  }
+
+  Widget _buildChartTypeSelector() {
+    return PopupMenuButton<String>(
+      icon: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF059669).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.tune,
+          color: Color(0xFF059669),
+          size: 20,
+        ),
+      ),
+      tooltip: 'Chart Settings',
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          enabled: false,
+          child: Text(
+            'Chart Settings',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          enabled: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Trend Chart Type:',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _buildChartTypeOption('line', Icons.show_chart, 'Line'),
+                  const SizedBox(width: 8),
+                  _buildChartTypeOption('area', Icons.area_chart, 'Area'),
+                  const SizedBox(width: 8),
+                  _buildChartTypeOption('bar', Icons.bar_chart, 'Bar'),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          enabled: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Category Chart Type:',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _buildCategoryChartTypeOption('pie', Icons.pie_chart, 'Pie'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChartTypeOption('donut', Icons.donut_small, 'Donut'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChartTypeOption('bar', Icons.bar_chart, 'Bar'),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        CheckedPopupMenuItem(
+          checked: _showComparison,
+          value: 'toggle_comparison',
+          child: const Text('Show Year Comparison'),
+          onTap: () {
+            setState(() {
+              _showComparison = !_showComparison;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChartTypeOption(String type, IconData icon, String label) {
+    final isSelected = _trendChartType == type;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _trendChartType = type;
+        });
+        Navigator.pop(context);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF059669) : Colors.grey[200],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : Colors.grey[700],
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: isSelected ? Colors.white : Colors.grey[700],
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryChartTypeOption(String type, IconData icon, String label) {
+    final isSelected = _categoryChartType == type;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _categoryChartType = type;
+        });
+        Navigator.pop(context);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF8B5CF6) : Colors.grey[200],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : Colors.grey[700],
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: isSelected ? Colors.white : Colors.grey[700],
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrendChartCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF059669).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _trendChartType == 'line' ? Icons.show_chart_rounded :
+                      _trendChartType == 'area' ? Icons.area_chart_rounded :
+                      Icons.bar_chart_rounded,
+                      color: const Color(0xFF059669),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Monthly Emissions Trend',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              _buildTimeRangeSelector(),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Render chart based on selected type
+          if (_trendChartType == 'line')
+            _buildEnhancedLineChart()
+          else if (_trendChartType == 'area')
+            _buildEnhancedAreaChart()
+          else
+            _buildMonthlyBarChart(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimeRangeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          _buildTimeRangeButton('3months', '3M'),
+          _buildTimeRangeButton('6months', '6M'),
+          _buildTimeRangeButton('year', '1Y'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimeRangeButton(String range, String label) {
+    final isSelected = _timeRange == range;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _timeRange = range;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF059669) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.white : Colors.grey[700],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryChartCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  _categoryChartType == 'pie' ? Icons.pie_chart_rounded :
+                  _categoryChartType == 'donut' ? Icons.donut_small :
+                  Icons.bar_chart_rounded,
+                  color: const Color(0xFF8B5CF6),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Emissions by Scope',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Render chart based on selected type
+          if (_categoryChartType == 'pie')
+            _buildScopeComparisonPieChart()
+          else if (_categoryChartType == 'donut')
+            _buildScopeDonutChart()
+          else
+            _buildScopeBarChart(),
+        ],
+      ),
     );
   }
 
