@@ -56,6 +56,13 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
         if (_dashboardData['missing_categories']?.isNotEmpty ?? false) {
           _showMissingDataAlert();
         }
+
+        // Check for category increases (show after a short delay to not overwhelm user)
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            _showCategoryWarnings();
+          }
+        });
       } else {
         setState(() {
           _isLoading = false;
@@ -83,10 +90,144 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   }
 
 
+  List<Map<String, dynamic>> _detectCategoryIncreases({double threshold = 50.0}) {
+    final currentMonth = _dashboardData['current_month_category_breakdown'] as Map?;
+    final lastMonth = _dashboardData['last_month_category_breakdown'] as Map?;
+
+    if (currentMonth == null || lastMonth == null) return [];
+
+    List<Map<String, dynamic>> warnings = [];
+
+    currentMonth.forEach((category, currentValue) {
+      final current = (currentValue ?? 0).toDouble();
+      final previous = (lastMonth[category] ?? 0).toDouble();
+
+      // Only warn if there was previous data and current is significantly higher
+      if (previous > 0 && current > previous) {
+        final increasePercentage = ((current - previous) / previous * 100);
+
+        if (increasePercentage >= threshold) {
+          warnings.add({
+            'category': category,
+            'current': current,
+            'previous': previous,
+            'increase_percentage': increasePercentage,
+          });
+        }
+      }
+    });
+
+    // Sort by highest increase percentage
+    warnings.sort((a, b) => (b['increase_percentage'] as double).compareTo(a['increase_percentage'] as double));
+
+    return warnings;
+  }
+
+  void _showCategoryWarnings() {
+    final warnings = _detectCategoryIncreases(threshold: 50.0);
+
+    if (warnings.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.trending_up, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Emission Increase Alert'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Significant increases detected compared to last month:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 16),
+              ...warnings.map((warning) {
+                final category = Constants.getCategoryDisplayName(warning['category']);
+                final percentage = warning['increase_percentage'].toStringAsFixed(1);
+                final current = warning['current'].toStringAsFixed(0);
+                final previous = warning['previous'].toStringAsFixed(0);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.arrow_upward, color: Colors.orange.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              category,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange.shade900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Increased by $percentage%',
+                        style: TextStyle(
+                          color: Colors.orange.shade700,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Last month: $previous kg CO₂ → This month: $current kg CO₂',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Dismiss'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Could navigate to detailed analysis or add emission screen
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+            child: const Text('View Details'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showMissingDataAlert() {
     final missing = _dashboardData['missing_categories'] as List;
     if (missing.isEmpty) return;
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -154,7 +295,11 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                             // Alert if exceeding target
                             if ((_dashboardData['current_month_total'] ?? 0) > _monthlyTarget)
                               _buildModernAlertCard(),
-                            
+
+                            // Alert for category increases
+                            if (_detectCategoryIncreases(threshold: 50.0).isNotEmpty)
+                              _buildCategoryIncreaseCard(),
+
                             // Quick Stats Grid
                             _buildQuickStatsGrid(),
                             const SizedBox(height: 24),
@@ -1399,6 +1544,76 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryIncreaseCard() {
+    final warnings = _detectCategoryIncreases(threshold: 50.0);
+    if (warnings.isEmpty) return const SizedBox.shrink();
+
+    final topWarning = warnings.first;
+    final category = Constants.getCategoryDisplayName(topWarning['category']);
+    final percentage = topWarning['increase_percentage'].toStringAsFixed(0);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.orange[50]!, Colors.orange[100]!],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange[200]!),
+      ),
+      child: InkWell(
+        onTap: _showCategoryWarnings,
+        borderRadius: BorderRadius.circular(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.trending_up_rounded, color: Colors.orange[700], size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Emission Spike Detected!',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange[700],
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$category increased by $percentage% vs last month',
+                    style: TextStyle(color: Colors.orange[600]),
+                  ),
+                  if (warnings.length > 1) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '+${warnings.length - 1} more ${warnings.length - 1 == 1 ? 'category' : 'categories'}',
+                      style: TextStyle(
+                        color: Colors.orange[500],
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: Colors.orange[600], size: 16),
+          ],
+        ),
       ),
     );
   }

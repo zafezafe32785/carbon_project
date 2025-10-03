@@ -254,8 +254,10 @@ class CarbonReportGenerator:
                 max_tokens=300,
                 temperature=0.7
             )
-            
-            return response.choices[0].message.content.strip()
+
+            # Clean up multiple spaces and normalize whitespace
+            content = response.choices[0].message.content.strip()
+            return ' '.join(content.split())
             
         except Exception as e:
             return self._get_fallback_executive_summary(report_data, report_format, language)
@@ -289,7 +291,10 @@ class CarbonReportGenerator:
             )
             
             findings_text = response.choices[0].message.content.strip()
-            return [f.strip('• -').strip() for f in findings_text.split('\n') if f.strip()]
+            # Clean up multiple spaces and newlines, filter empty lines
+            lines = [f.strip('• -').strip() for f in findings_text.split('\n')]
+            # Remove empty strings and normalize whitespace
+            return [' '.join(line.split()) for line in lines if line.strip()]
             
         except Exception as e:
             return self._get_fallback_key_findings(report_data, language)
@@ -324,7 +329,10 @@ class CarbonReportGenerator:
             )
             
             recommendations_text = response.choices[0].message.content.strip()
-            return [r.strip('• -').strip() for r in recommendations_text.split('\n') if r.strip()]
+            # Clean up multiple spaces and newlines, filter empty lines
+            lines = [r.strip('• -').strip() for r in recommendations_text.split('\n')]
+            # Remove empty strings and normalize whitespace
+            return [' '.join(line.split()) for line in lines if line.strip()]
             
         except Exception as e:
             return self._get_fallback_recommendations(report_data, language)
@@ -364,8 +372,10 @@ class CarbonReportGenerator:
                 max_tokens=250,
                 temperature=0.6
             )
-            
-            return response.choices[0].message.content.strip()
+
+            # Clean up multiple spaces and normalize whitespace
+            content = response.choices[0].message.content.strip()
+            return ' '.join(content.split())
             
         except Exception as e:
             return self._get_fallback_trend_analysis(report_data, language)
@@ -416,7 +426,9 @@ class CarbonReportGenerator:
             }
         
         default_text = "หลักการบัญชีคาร์บอนมาตรฐานถูกนำมาใช้" if language == 'TH' else "Standard carbon accounting principles applied."
-        return compliance_notes.get(report_format, default_text)
+        # Clean up multiple spaces and newlines from the compliance notes
+        text = compliance_notes.get(report_format, default_text)
+        return ' '.join(text.split())
 
     def _get_fallback_content(self, report_data: Dict, report_format: str, language: str = 'EN') -> Dict:
         """Fallback content when AI is not available"""
@@ -434,23 +446,25 @@ class CarbonReportGenerator:
     def _get_fallback_executive_summary(self, report_data: Dict, report_format: str, language: str = 'EN') -> str:
         """Fallback executive summary"""
         if language == 'TH':
-            return f"""
+            text = f"""
             รายงานการปล่อยก๊าซเรือนกระจก {report_format} ฉบับนี้นำเสนอการวิเคราะห์ที่ครอบคลุมเกี่ยวกับการปล่อยก๊าซเรือนกระจก
-            ของ {report_data['organization']} ในช่วงระยะเวลาตั้งแต่ {report_data['period_start'].strftime('%B %Y')} 
-            ถึง {report_data['period_end'].strftime('%B %Y')} การปล่อยก๊าซเรือนกระจกรวมทั้งหมด {report_data['total_emissions']:.2f} kg CO2e 
+            ของ {report_data['organization']} ในช่วงระยะเวลาตั้งแต่ {report_data['period_start'].strftime('%B %Y')}
+            ถึง {report_data['period_end'].strftime('%B %Y')} การปล่อยก๊าซเรือนกระจกรวมทั้งหมด {report_data['total_emissions']:.2f} kg CO2e
             จากข้อมูล {report_data['record_count']} รายการ รายงานนี้เป็นไปตามมาตรฐาน {report_format} และให้ข้อมูลเชิงลึก
-            ที่สามารถนำไปปฏิบัติได้สำหรับกลยุทธ์การลดการปล่อยก๊าซเรือนกระจก จุดสำคัญที่ควรให้ความสนใจ ได้แก่ 
+            ที่สามารถนำไปปฏิบัติได้สำหรับกลยุทธ์การลดการปล่อยก๊าซเรือนกระจก จุดสำคัญที่ควรให้ความสนใจ ได้แก่
             การปรับปรุงประสิทธิภาพการใช้พลังงานและการดำเนินงานที่ยั่งยืนเพื่อบรรลุเป้าหมายการลดคาร์บอน
             """
         else:
-            return f"""
-            This {report_format} carbon emissions report presents a comprehensive analysis of greenhouse gas emissions 
-            for {report_data['organization']} covering the period from {report_data['period_start'].strftime('%B %Y')} 
-            to {report_data['period_end'].strftime('%B %Y')}. Total emissions reached {report_data['total_emissions']:.2f} kg CO2e 
-            across {report_data['record_count']} emission records. The report follows {report_format} standards and provides 
-            actionable insights for emission reduction strategies. Key focus areas include energy efficiency improvements 
+            text = f"""
+            This {report_format} carbon emissions report presents a comprehensive analysis of greenhouse gas emissions
+            for {report_data['organization']} covering the period from {report_data['period_start'].strftime('%B %Y')}
+            to {report_data['period_end'].strftime('%B %Y')}. Total emissions reached {report_data['total_emissions']:.2f} kg CO2e
+            across {report_data['record_count']} emission records. The report follows {report_format} standards and provides
+            actionable insights for emission reduction strategies. Key focus areas include energy efficiency improvements
             and sustainable operational practices to achieve carbon reduction goals.
             """
+        # Clean up multiple spaces and newlines
+        return ' '.join(text.split())
 
     def _get_fallback_key_findings(self, report_data: Dict, language: str = 'EN') -> List[str]:
         """Fallback key findings"""
@@ -619,7 +633,9 @@ class CarbonReportGenerator:
             }
         
         default_text = "วิธีการบัญชีคาร์บอนมาตรฐานถูกนำมาใช้" if language == 'TH' else "Standard carbon accounting methodologies applied."
-        return methodologies.get(report_format, default_text)
+        # Clean up multiple spaces and newlines from the methodology text
+        text = methodologies.get(report_format, default_text)
+        return ' '.join(text.split())
 
     def _generate_report_file(self, content: Dict, report_format: str, file_type: str, language: str) -> str:
         """Generate report file based on type and language"""

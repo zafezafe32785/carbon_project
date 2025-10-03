@@ -1207,19 +1207,25 @@ def get_emissions(current_user):
         
         # Get emission records
         emissions = list(emission_records_collection.find(query).sort('created_at', -1))
-        
+
         # Convert ObjectId to string
         for emission in emissions:
             emission['_id'] = str(emission['_id'])
             emission['user_id'] = str(emission['user_id'])
-        
+            # Convert datetime to string for JSON serialization
+            if 'created_at' in emission:
+                emission['created_at'] = emission['created_at'].isoformat() if hasattr(emission['created_at'], 'isoformat') else str(emission['created_at'])
+
         # Calculate total
         total_co2 = sum(e['co2_equivalent'] for e in emissions)
-        
+
         return jsonify({
-            'emissions': emissions,
-            'total_co2': total_co2,
-            'count': len(emissions)
+            'success': True,
+            'data': {
+                'emissions': emissions,
+                'total_co2': total_co2,
+                'count': len(emissions)
+            }
         }), 200
         
     except Exception as e:
@@ -1278,7 +1284,19 @@ def get_dashboard(current_user):
         last_year_total = sum(float(e.get('co2_equivalent', 0)) for e in last_year_emissions)
         print(f"SHARED Last year ({last_year}) total: {last_year_total}")
         
-        # Category breakdown for CURRENT YEAR from ALL USERS
+        # Category breakdown for CURRENT MONTH from ALL USERS
+        current_month_category_breakdown = {}
+        for e in current_month_emissions:
+            cat = e.get('category', 'other')
+            current_month_category_breakdown[cat] = current_month_category_breakdown.get(cat, 0) + float(e.get('co2_equivalent', 0))
+
+        # Category breakdown for LAST MONTH from ALL USERS
+        last_month_category_breakdown = {}
+        for e in last_month_emissions:
+            cat = e.get('category', 'other')
+            last_month_category_breakdown[cat] = last_month_category_breakdown.get(cat, 0) + float(e.get('co2_equivalent', 0))
+
+        # Category breakdown for CURRENT YEAR from ALL USERS (keep for compatibility)
         category_breakdown = {}
         for e in current_year_emissions:
             cat = e.get('category', 'other')
@@ -1330,6 +1348,8 @@ def get_dashboard(current_user):
             'last_year_total': round(last_year_total, 2),
             'year_change_percentage': round(year_change_percentage, 1),
             'category_breakdown': category_breakdown,
+            'current_month_category_breakdown': current_month_category_breakdown,
+            'last_month_category_breakdown': last_month_category_breakdown,
             'monthly_trend': monthly_trend,
             'last_year_trend': last_year_trend,
             'missing_categories': [],
@@ -2651,19 +2671,27 @@ def get_edit_requests(current_user):
         
         # Get requests sorted by sequence (no date parsing needed)
         requests = list(edit_requests_collection.find(query).sort('sequence', -1))
-        
+
         # Convert ObjectId to string and add simple display info
         for req in requests:
             req['_id'] = str(req['_id'])
             req['user_id'] = str(req['user_id'])
-            
+
+            # Convert datetime fields to string for JSON serialization
+            if 'created_at' in req:
+                req['created_at'] = req['created_at'].isoformat() if hasattr(req['created_at'], 'isoformat') else str(req['created_at'])
+            if 'updated_at' in req:
+                req['updated_at'] = req['updated_at'].isoformat() if hasattr(req['updated_at'], 'isoformat') else str(req['updated_at'])
+            if 'processed_at' in req:
+                req['processed_at'] = req['processed_at'].isoformat() if hasattr(req['processed_at'], 'isoformat') else str(req['processed_at'])
+
             # Add simple status display without complex date parsing
             req['display_status'] = req.get('status', 'unknown').title()
             req['audit_reference'] = req.get('audit_id', 'N/A')
-            
+
             # Add simple sequence info for sorting/display
             req['submission_order'] = req.get('sequence', 0)
-        
+
         return jsonify({
             'success': True,
             'data': {
@@ -2700,19 +2728,27 @@ def get_all_edit_requests(current_user):
         
         # Get requests sorted by audit_id
         requests = list(edit_requests_collection.find(query).sort('audit_id', -1).skip(skip).limit(limit))
-        
+
         # Simple conversion - just convert ObjectId to string, nothing else
         for req in requests:
             req['_id'] = str(req['_id'])
             req['user_id'] = str(req['user_id'])
-            
+
             # Convert ObjectId fields if present
             if 'processed_by' in req and req['processed_by']:
                 req['processed_by'] = str(req['processed_by'])
-            
+
+            # Convert datetime fields to string for JSON serialization
+            if 'created_at' in req:
+                req['created_at'] = req['created_at'].isoformat() if hasattr(req['created_at'], 'isoformat') else str(req['created_at'])
+            if 'updated_at' in req:
+                req['updated_at'] = req['updated_at'].isoformat() if hasattr(req['updated_at'], 'isoformat') else str(req['updated_at'])
+            if 'processed_at' in req:
+                req['processed_at'] = req['processed_at'].isoformat() if hasattr(req['processed_at'], 'isoformat') else str(req['processed_at'])
+
             # Simple status info
             req['status_display'] = req.get('status', 'unknown').title()
-        
+
         return jsonify({
             'success': True,
             'requests': requests,
