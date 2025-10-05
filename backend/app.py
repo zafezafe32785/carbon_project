@@ -1309,12 +1309,29 @@ def add_emission(current_user):
         except (ValueError, TypeError):
             return jsonify({'message': 'Amount must be a valid number'}), 400
 
-        # Calculate CO2 equivalent using improved TGO factors
-        co2_equivalent = calculate_co2_equivalent(data['category'], amount, data['unit'])
-        
+        # Look up emission factor from database to get the fuel_key (for consistency with OCR)
+        emission_factor_doc = emission_factors_collection.find_one({
+            'name': data['category']
+        })
+
+        # If not found by name, try by fuel_key
+        if not emission_factor_doc:
+            emission_factor_doc = emission_factors_collection.find_one({
+                'fuel_key': data['category'].lower().replace(' ', '_').replace('(', '').replace(')', '')
+            })
+
+        # Use the fuel_key from database (matching OCR behavior), or fall back to provided category
+        category_name = emission_factor_doc['fuel_key'] if emission_factor_doc else data['category']
+        emission_type = emission_factor_doc.get('fuel_key', category_name) if emission_factor_doc else data.get('emission_type', data['category'])
+
+        # Calculate CO2 equivalent using the category name
+        co2_equivalent = calculate_co2_equivalent(category_name, amount, data['unit'])
+
         # Get the emission factor value for storage
         emission_factor_value = 0
-        if co2_equivalent > 0:
+        if emission_factor_doc:
+            emission_factor_value = emission_factor_doc['value']
+        elif co2_equivalent > 0:
             emission_factor_value = co2_equivalent / amount
 
         # Create emission record (matching your exact structure)
@@ -1322,8 +1339,8 @@ def add_emission(current_user):
         emission_record = {
             'record_id': generate_record_id(),
             'user_id': str(current_user['_id']),
-            'category': data['category'],
-            'emission_type': data.get('emission_type', data['category']),
+            'category': category_name,
+            'emission_type': emission_type,
             'amount': amount,
             'unit': data['unit'],
             'month': month,
@@ -2227,9 +2244,8 @@ def preview_report_data(current_user):
         start_date = datetime.fromisoformat(data['start_date'].replace('Z', '+00:00'))
         end_date = datetime.fromisoformat(data['end_date'].replace('Z', '+00:00'))
         
-        # Get emissions data for preview
+        # Get ALL emissions data for preview (shared data - same as dashboard)
         emissions = list(emission_records_collection.find({
-            'user_id': current_user['_id'],
             'record_date': {
                 '$gte': start_date,
                 '$lte': end_date
@@ -2247,14 +2263,38 @@ def preview_report_data(current_user):
         
         # Group by scope
         emissions_by_scope = {'Scope 1': 0, 'Scope 2': 0, 'Scope 3': 0}
-        scope_mapping = {
-            'electricity': 2, 'diesel': 1, 'gasoline': 1, 
-            'natural_gas': 1, 'waste': 3, 'transport': 3
-        }
-        
+
+        def get_emission_scope(category):
+            """Determine scope based on database lookup or category name"""
+            # First, try to find the scope from the emission_factors database
+            emission_factor = emission_factors_collection.find_one({'name': category})
+            if emission_factor and 'scope' in emission_factor:
+                return emission_factor['scope']
+
+            # Fallback to keyword matching
+            category_lower = category.lower()
+
+            # Scope 2: Electricity (all forms)
+            if any(keyword in category_lower for keyword in ['electricity', 'grid mix']):
+                return 2
+
+            # Scope 1: All combustion and fugitive emissions
+            scope1_keywords = ['diesel', 'gasoline', 'petrol', 'natural gas', 'coal',
+                              'fuel oil', 'kerosene', 'lpg', 'cng', 'biogas', 'wood',
+                              'bagasse', 'palm', 'corn', 'r-', 'refrigerant']
+            if any(keyword in category_lower for keyword in scope1_keywords):
+                return 1
+
+            # Scope 3: Waste, transport, etc.
+            if any(keyword in category_lower for keyword in ['waste', 'transport']):
+                return 3
+
+            # Default to Scope 3 for unknown categories
+            return 3
+
         for emission in emissions:
             category = emission.get('category', 'other')
-            scope = scope_mapping.get(category, 3)
+            scope = get_emission_scope(category)
             scope_key = f"Scope {scope}"
             emissions_by_scope[scope_key] += emission.get('co2_equivalent', 0)
         
@@ -2267,7 +2307,7 @@ def preview_report_data(current_user):
                 'emissions_by_category': emissions_by_category,
                 'emissions_by_scope': emissions_by_scope,
                 'report_format': data['report_format'],
-                'organization': current_user.get('organization', 'Unknown Organization')
+                'organization': 'All Organizations'
             }
         }), 200
         
@@ -2374,32 +2414,46 @@ def process_spreadsheet(file, user_id):
                 
                 # Get category and normalize
                 category = str(row[category_col]).lower().strip()
-                
+
                 # Get amount
                 amount = float(row[amount_col])
-                
+
                 # Get unit and normalize (CASE-INSENSITIVE)
                 unit = str(row[unit_col]).strip() if unit_col else 'kwh'
-                
+
                 print(f"Processing row {index + 1}: category={category}, amount={amount}, unit={unit}")
-                
+
+                # Look up emission factor to get standardized fuel_key (for consistency with OCR)
+                emission_factor_doc = emission_factors_collection.find_one({
+                    '$or': [
+                        {'fuel_key': category},
+                        {'name': {'$regex': f'^{category}$', '$options': 'i'}},
+                        {'activity_types': category}
+                    ]
+                })
+
+                # Use fuel_key from database if found
+                category_key = emission_factor_doc['fuel_key'] if emission_factor_doc else category
+
                 # Calculate CO2 equivalent
-                co2_equivalent = calculate_co2_equivalent(category, amount, unit)
-                
+                co2_equivalent = calculate_co2_equivalent(category_key, amount, unit)
+
                 if co2_equivalent == 0:
                     errors.append(f'Row {index + 2}: Warning - CO2 calculation returned 0 for {category}')
-                
+
                 # Get emission factor
                 emission_factor_value = 0
-                if co2_equivalent > 0 and amount > 0:
+                if emission_factor_doc:
+                    emission_factor_value = emission_factor_doc['value']
+                elif co2_equivalent > 0 and amount > 0:
                     emission_factor_value = co2_equivalent / amount
-                
+
                 # Create emission record
                 emission_record = {
                     'record_id': generate_record_id(),
                     'user_id': user_id,
-                    'category': category,
-                    'emission_type': category,
+                    'category': category_key,
+                    'emission_type': category_key,
                     'amount': amount,
                     'unit': unit,  # Keep original casing for display
                     'month': date_obj.month,

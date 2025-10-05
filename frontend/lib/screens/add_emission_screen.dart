@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/localization_service.dart';
-import '../utils/tgo_emission_factors.dart';
 
 class AddEmissionScreen extends StatefulWidget {
   const AddEmissionScreen({super.key});
@@ -15,23 +14,50 @@ class _AddEmissionScreenState extends State<AddEmissionScreen> {
   final _amountController = TextEditingController();
   final _searchController = TextEditingController();
   final LocalizationService _localization = LocalizationService();
-  
+
   String? _selectedCategory;
   String? _selectedFuelKey;
   Map<String, dynamic>? _selectedFuel;
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
   bool _isLoading = false;
-  
+  bool _isLoadingData = true;
+
   List<String> _categories = [];
+  List<Map<String, dynamic>> _allFuels = [];
   List<Map<String, dynamic>> _fuelsInCategory = [];
   List<Map<String, dynamic>> _filteredFuels = [];
 
   @override
   void initState() {
     super.initState();
-    _categories = TGOEmissionFactors.getCategories();
     _searchController.addListener(_filterFuels);
+    _loadEmissionFactors();
+  }
+
+  Future<void> _loadEmissionFactors() async {
+    setState(() => _isLoadingData = true);
+
+    final language = _localization.isThaiLanguage ? 'th' : 'en';
+    final result = await ApiService.getEmissionFactors(language: language);
+
+    if (result['success'] == true) {
+      setState(() {
+        _allFuels = List<Map<String, dynamic>>.from(result['emission_factors']);
+        _categories = List<String>.from(result['categories']);
+        _isLoadingData = false;
+      });
+    } else {
+      setState(() => _isLoadingData = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Failed to load emission factors'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -46,8 +72,8 @@ class _AddEmissionScreenState extends State<AddEmissionScreen> {
       _selectedCategory = category;
       _selectedFuelKey = null;
       _selectedFuel = null;
-      _fuelsInCategory = category != null 
-          ? TGOEmissionFactors.getFuelsByCategory(category)
+      _fuelsInCategory = category != null
+          ? _allFuels.where((fuel) => fuel['category'] == category).toList()
           : [];
       _filteredFuels = _fuelsInCategory;
       _searchController.clear();
@@ -75,9 +101,10 @@ class _AddEmissionScreenState extends State<AddEmissionScreen> {
   }
 
   double _calculateCO2Equivalent() {
-    if (_selectedFuelKey == null || _amountController.text.isEmpty) return 0.0;
+    if (_selectedFuel == null || _amountController.text.isEmpty) return 0.0;
     final amount = double.tryParse(_amountController.text) ?? 0.0;
-    return TGOEmissionFactors.calculateCO2Equivalent(_selectedFuelKey!, amount);
+    final factor = (_selectedFuel!['factor'] as num).toDouble();
+    return amount * factor;
   }
 
   Future<void> _submitEmission() async {
@@ -147,29 +174,31 @@ class _AddEmissionScreenState extends State<AddEmissionScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Info Card
-              Card(
-                color: Colors.blue[50],
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info, color: Colors.blue[700]),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _localization.usingTgoFactors,
-                          style: TextStyle(
-                            color: Colors.blue[700],
-                            fontSize: 12,
-                          ),
+      body: _isLoadingData
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Info Card
+                    Card(
+                      color: Colors.blue[50],
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info, color: Colors.blue[700]),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _localization.usingTgoFactors,
+                                style: TextStyle(
+                                  color: Colors.blue[700],
+                                  fontSize: 12,
+                                ),
                         ),
                       ),
                     ],

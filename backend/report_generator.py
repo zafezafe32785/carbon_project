@@ -103,7 +103,7 @@ class CarbonReportGenerator:
     def _collect_emission_data(self, user_id: str, start_date: str, end_date: str) -> Dict:
         """
         Collect and process emission data from database
-        Reuses the same data collection logic as smart_dashboard for consistency
+        Uses SHARED data from ALL users (same as dashboard)
         All CO2 calculations are already done using TGO factors
         """
 
@@ -111,13 +111,12 @@ class CarbonReportGenerator:
         start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
         end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
 
-        # Get user information
+        # Get user information (for report metadata only)
         user = users_collection.find_one({'_id': ObjectId(user_id)})
-        organization = user.get('organization', 'Unknown Organization') if user else 'Unknown Organization'
+        organization = user.get('organization', 'All Organizations') if user else 'All Organizations'
 
-        # Query emission records (same as dashboard - data already has co2_equivalent calculated)
+        # Query ALL emission records from ALL users (shared data - same as dashboard)
         emissions = list(emission_records_collection.find({
-            'user_id': ObjectId(user_id),
             'record_date': {'$gte': start_dt, '$lte': end_dt}
         }))
 
@@ -1102,14 +1101,11 @@ class CarbonReportGenerator:
         return styles
 
     def _generate_pdf_report(self, content: Dict, report_format: str, language: str = 'EN') -> str:
-        """Generate professional PDF report using Word-to-PDF conversion for better mixed content support"""
+        """Generate professional PDF report using Word-to-PDF conversion for better quality"""
         try:
-            # For Thai language with mixed content, use Word-to-PDF conversion approach
-            if language == 'TH':
-                return self._generate_pdf_via_word(content, report_format, language)
-            else:
-                return self._generate_direct_pdf(content, report_format, language)
-                
+            # Use Word-to-PDF conversion for both Thai and English for consistency
+            return self._generate_pdf_via_word(content, report_format, language)
+
         except Exception as e:
             print(f"PDF generation error: {str(e)}")
             # Fallback to direct PDF generation
@@ -1118,72 +1114,123 @@ class CarbonReportGenerator:
     def _generate_pdf_via_word(self, content: Dict, report_format: str, language: str = 'EN') -> str:
         """Generate PDF by first creating Word document then converting to PDF"""
         try:
+            print(f"\n{'='*60}")
+            print(f"Starting Word-to-PDF conversion for {language} report")
+            print(f"{'='*60}")
+
             # First generate Word document
             word_filepath = self._generate_word_report(content, report_format, language)
-            
+
             if not word_filepath or not os.path.exists(word_filepath):
                 raise Exception("Word document generation failed")
-            
-            # Create PDF filename
+
+            print(f"✓ Word document created: {word_filepath}")
+
+            # Create PDF filename with absolute path
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             pdf_filename = f"carbon_report_{report_format}_{language}_{timestamp}.pdf"
-            pdf_filepath = os.path.join('reports', pdf_filename)
-            
+            reports_dir = os.path.join(os.path.dirname(__file__), 'reports')
+            os.makedirs(reports_dir, exist_ok=True)
+            pdf_filepath = os.path.join(reports_dir, pdf_filename)
+
+            # Convert to absolute paths
+            word_filepath_abs = os.path.abspath(word_filepath)
+            pdf_filepath_abs = os.path.abspath(pdf_filepath)
+
+            print(f"Target PDF path: {pdf_filepath_abs}")
+
             # Try to convert Word to PDF using python-docx2pdf or similar
             try:
                 # Method 1: Try using docx2pdf if available
+                print("Attempting conversion with docx2pdf...")
                 import docx2pdf
-                docx2pdf.convert(word_filepath, pdf_filepath)
-                print(f"Successfully converted Word to PDF using docx2pdf: {pdf_filepath}")
-                
-                # Clean up temporary Word file
+                import pythoncom
+
+                # Initialize COM for this thread
+                pythoncom.CoInitialize()
+
                 try:
-                    os.remove(word_filepath)
-                except:
-                    pass
-                    
-                return pdf_filepath
-                
-            except ImportError:
-                print("docx2pdf not available, trying alternative method...")
-                
+                    docx2pdf.convert(word_filepath_abs, pdf_filepath_abs)
+
+                    # Verify PDF was created
+                    if os.path.exists(pdf_filepath_abs):
+                        print(f"✓ Successfully converted Word to PDF using docx2pdf")
+                        print(f"  PDF size: {os.path.getsize(pdf_filepath_abs)} bytes")
+
+                        # Clean up temporary Word file
+                        try:
+                            os.remove(word_filepath_abs)
+                            print(f"✓ Cleaned up temporary Word file")
+                        except Exception as cleanup_error:
+                            print(f"⚠ Could not remove temp file: {cleanup_error}")
+
+                        return pdf_filepath
+                    else:
+                        raise Exception("docx2pdf completed but PDF file not found")
+                finally:
+                    # Uninitialize COM
+                    pythoncom.CoUninitialize()
+
+            except ImportError as ie:
+                if 'pythoncom' in str(ie):
+                    print("⚠ pythoncom not available, trying alternative method...")
+                else:
+                    print("⚠ docx2pdf not available, trying alternative method...")
+            except Exception as e:
+                print(f"⚠ docx2pdf conversion failed: {str(e)}")
+
             # Method 2: Try using win32com (Windows only)
             try:
+                print("Attempting conversion with win32com (Microsoft Word)...")
                 import win32com.client
-                
-                word = win32com.client.Dispatch("Word.Application")
-                word.Visible = False
-                
-                # Open the Word document
-                doc = word.Documents.Open(os.path.abspath(word_filepath))
-                
-                # Save as PDF
-                doc.SaveAs2(os.path.abspath(pdf_filepath), FileFormat=17)  # 17 = PDF format
-                doc.Close()
-                word.Quit()
-                
-                print(f"Successfully converted Word to PDF using win32com: {pdf_filepath}")
-                
-                # Clean up temporary Word file
+                import pythoncom
+
+                # Initialize COM for this thread
+                pythoncom.CoInitialize()
+
                 try:
-                    os.remove(word_filepath)
-                except:
-                    pass
-                    
-                return pdf_filepath
-                
+                    word = win32com.client.Dispatch("Word.Application")
+                    word.Visible = False
+
+                    # Open the Word document
+                    doc = word.Documents.Open(word_filepath_abs)
+
+                    # Save as PDF
+                    doc.SaveAs2(pdf_filepath_abs, FileFormat=17)  # 17 = PDF format
+                    doc.Close()
+                    word.Quit()
+
+                    # Verify PDF was created
+                    if os.path.exists(pdf_filepath_abs):
+                        print(f"✓ Successfully converted Word to PDF using win32com")
+                        print(f"  PDF size: {os.path.getsize(pdf_filepath_abs)} bytes")
+
+                        # Clean up temporary Word file
+                        try:
+                            os.remove(word_filepath_abs)
+                            print(f"✓ Cleaned up temporary Word file")
+                        except Exception as cleanup_error:
+                            print(f"⚠ Could not remove temp file: {cleanup_error}")
+
+                        return pdf_filepath
+                    else:
+                        raise Exception("win32com completed but PDF file not found")
+                finally:
+                    # Uninitialize COM
+                    pythoncom.CoUninitialize()
+
             except ImportError:
-                print("win32com not available, trying alternative method...")
+                print("⚠ win32com not available")
             except Exception as e:
-                print(f"win32com conversion failed: {str(e)}")
-            
-            # Method 3: Use reportlab with improved font handling based on Word success
-            return self._generate_improved_direct_pdf(content, report_format, language, word_filepath)
-            
+                print(f"⚠ win32com conversion failed: {str(e)}")
+
+            # If both methods failed, raise exception instead of using bad fallback
+            raise Exception("All Word-to-PDF conversion methods failed")
+
         except Exception as e:
-            print(f"Word-to-PDF conversion failed: {str(e)}")
-            # Fallback to direct PDF generation
-            return self._generate_direct_pdf(content, report_format, language)
+            print(f"✗ Word-to-PDF conversion failed: {str(e)}")
+            print(f"✗ CANNOT generate report - Word-to-PDF is required for quality output")
+            raise Exception(f"PDF generation failed: {str(e)}")
 
     def _generate_improved_direct_pdf(self, content: Dict, report_format: str, language: str, word_reference: str = None) -> str:
         """Generate PDF with improved font handling based on successful Word document approach"""

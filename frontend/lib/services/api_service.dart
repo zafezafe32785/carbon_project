@@ -178,6 +178,49 @@ class ApiService {
     }
   }
   
+  // Get Emission Factors
+  static Future<Map<String, dynamic>> getEmissionFactors({String? category, String language = 'en'}) async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'Not authenticated'};
+      }
+
+      var url = '${Constants.apiUrl}/emission-factors?language=$language';
+      if (category != null) {
+        url += '&category=$category';
+      }
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      try {
+        final data = json.decode(response.body);
+
+        if (response.statusCode == 200) {
+          return {
+            'success': true,
+            'emission_factors': data['emission_factors'],
+            'categories': data['categories'],
+            'count': data['count'],
+          };
+        } else {
+          return {'success': false, 'message': data['message'] ?? 'Failed to load emission factors'};
+        }
+      } on FormatException catch (e) {
+        print('JSON parsing error: $e');
+        return {'success': false, 'message': 'Invalid server response'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error: $e'};
+    }
+  }
+
   // Add Emission
   static Future<Map<String, dynamic>> addEmission({
     required String category,
@@ -191,7 +234,7 @@ class ApiService {
       if (token == null) {
         return {'success': false, 'message': 'Not authenticated'};
       }
-      
+
       final response = await http.post(
         Uri.parse('${Constants.apiUrl}/emissions'),
         headers: {
