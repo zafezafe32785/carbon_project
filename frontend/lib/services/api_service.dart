@@ -117,11 +117,15 @@ class ApiService {
           await prefs.setString('user_id', data['user_id']);
           await prefs.setString('email', data['email'] ?? '');
           await prefs.setString('organization', data['organization'] ?? '');
+          await prefs.setString('role', data['role'] ?? 'user');
+          await prefs.setBool('is_admin', data['is_admin'] ?? false);
 
           return {
             'success': true,
             'token': data['token'],
             'user_id': data['user_id'],
+            'is_admin': data['is_admin'] ?? false,
+            'role': data['role'] ?? 'user',
           };
         } else {
           return {'success': false, 'message': data['message'] ?? 'Login failed'};
@@ -436,7 +440,7 @@ class ApiService {
   }
 
   // Update user admin status (admin only)
-  static Future<Map<String, dynamic>> updateUserAdminStatus(int userId, bool isAdmin) async {
+  static Future<Map<String, dynamic>> updateUserAdminStatus(String userId, bool isAdmin) async {
     try {
       final token = await getToken();
       if (token == null) {
@@ -467,7 +471,7 @@ class ApiService {
   }
 
   // Reset user password (admin only)
-  static Future<Map<String, dynamic>> resetUserPassword(int userId, String newPassword) async {
+  static Future<Map<String, dynamic>> resetUserPassword(String userId, String newPassword) async {
     try {
       final token = await getToken();
       if (token == null) {
@@ -498,7 +502,7 @@ class ApiService {
   }
 
   // Delete user (admin only)
-  static Future<Map<String, dynamic>> deleteUser(int userId) async {
+  static Future<Map<String, dynamic>> deleteUser(String userId) async {
     try {
       final token = await getToken();
       if (token == null) {
@@ -544,9 +548,9 @@ class ApiService {
       );
       
       final data = json.decode(response.body);
-      
+
       if (response.statusCode == 200) {
-        return {'success': true, 'data': data};
+        return data;  // Backend already returns {success: true, data: {...}}
       } else {
         return {'success': false, 'message': data['message'] ?? 'Failed to load emissions'};
       }
@@ -606,12 +610,12 @@ class ApiService {
       if (token == null) {
         return {'success': false, 'message': 'Not authenticated'};
       }
-      
+
       String url = '${Constants.apiUrl}/edit-requests';
       if (status != null) {
         url += '?status=$status';
       }
-      
+
       final response = await http.get(
         Uri.parse(url),
         headers: {
@@ -619,11 +623,11 @@ class ApiService {
           'Authorization': 'Bearer $token',
         },
       );
-      
+
       final data = json.decode(response.body);
-      
+
       if (response.statusCode == 200) {
-        return {'success': true, 'data': data};
+        return data;  // Backend already returns {success: true, data: {...}}
       } else {
         return {'success': false, 'message': data['message'] ?? 'Failed to load requests'};
       }

@@ -90,7 +90,7 @@ app.config.from_object(Config)
 mongo = PyMongo(app)
 
 # Enable CORS with specific configuration
-CORS(app, origins=["*"], allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "OPTIONS"])
+CORS(app, origins=["*"], allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 # OPTIMIZATION: Enable response compression (60% smaller responses)
 try:
@@ -114,7 +114,7 @@ def handle_preflight():
         response = jsonify({'status': 'ok'})
         response.headers.add("Access-Control-Allow-Origin", "*")
         response.headers.add('Access-Control-Allow-Headers', "Content-Type,Authorization")
-        response.headers.add('Access-Control-Allow-Methods', "GET,POST,OPTIONS")
+        response.headers.add('Access-Control-Allow-Methods', "GET,POST,PUT,DELETE,OPTIONS")
         return response
 
 # Create upload folder if it doesn't exist
@@ -1246,7 +1246,9 @@ def login():
             'token': token,
             'user_id': str(user['_id']),
             'email': user['email'],
-            'organization': user.get('organization', '')
+            'organization': user.get('organization', ''),
+            'role': user.get('role', 'user'),
+            'is_admin': user.get('is_admin', False)
         }), 200
         
     except Exception as e:
@@ -1438,7 +1440,8 @@ def get_emissions(current_user):
             'year': 1,
             'co2_equivalent': 1,
             'created_at': 1,
-            'emission_factor': 1
+            'emission_factor': 1,
+            'user_id': 1  # Added: needed for conversion to string
             # Exclude heavy fields: 'extracted_text', 'raw_text', 'import_data'
         }
 
@@ -1476,8 +1479,11 @@ def get_emissions(current_user):
                 'count': len(emissions)
             }
         }), 200
-        
+
     except Exception as e:
+        print(f"ERROR in get_emissions: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'message': f'Error: {str(e)}'}), 500
 
 # Dashboard Data - SHARED ACROSS ALL USERS
@@ -2606,8 +2612,9 @@ def get_all_users(current_user):
         
         # Convert ObjectId to string
         for user in users:
-            user['_id'] = str(user['_id'])
-            user['id'] = str(user['_id'])  # Add id field for frontend
+            user_id = str(user['_id'])  # Store the string ID first
+            user['_id'] = user_id
+            user['id'] = user_id  # Add id field for frontend
         
         return jsonify({
             'success': True,
@@ -2688,8 +2695,10 @@ def create_user_admin(current_user):
 def update_user_admin_status(current_user, user_id):
     """Update user admin status (admin only)"""
     try:
+        print(f"Update admin status request for user_id: {user_id}")
         data = request.get_json()
         is_admin = data.get('is_admin', False)
+        print(f"Setting is_admin to: {is_admin}")
         
         # Update user
         result = users_collection.update_one(
@@ -2857,17 +2866,34 @@ def get_audit_logs(current_user):
         # Get audit logs sorted by audit_id
         logs = list(audits_collection.find(query).sort('audit_id', -1).skip(skip).limit(limit))
         
-        # Simple conversion - just convert ObjectId to string, nothing else
+        # Convert all non-JSON-serializable objects
         for log in logs:
             log['_id'] = str(log['_id'])
+
+            # Convert user_id
             if 'user_id' in log:
                 log['user_id'] = str(log['user_id'])
-            
-            # Keep details simple - just convert ObjectId to string if needed
+
+            # Convert timestamp (with UTC indicator)
+            if 'timestamp' in log and log['timestamp']:
+                log['timestamp'] = (log['timestamp'].isoformat() + 'Z') if hasattr(log['timestamp'], 'isoformat') else str(log['timestamp'])
+
+            if 'audit_time' in log and log['audit_time']:
+                log['audit_time'] = (log['audit_time'].isoformat() + 'Z') if hasattr(log['audit_time'], 'isoformat') else str(log['audit_time'])
+
+            # Convert details - handle ObjectId, datetime, and nested dicts
             if 'details' in log and isinstance(log['details'], dict):
                 for key, value in list(log['details'].items()):
-                    if hasattr(value, '__class__') and 'ObjectId' in str(type(value)):
+                    if isinstance(value, ObjectId):
                         log['details'][key] = str(value)
+                    elif hasattr(value, 'isoformat'):  # datetime
+                        log['details'][key] = value.isoformat()
+                    elif isinstance(value, dict):
+                        # Handle nested dicts
+                        for k, v in value.items():
+                            if isinstance(v, (ObjectId, datetime)):
+                                value[k] = str(v) if isinstance(v, ObjectId) else v.isoformat()
+                        log['details'][key] = value
         
         return jsonify({
             'success': True,
@@ -3020,15 +3046,41 @@ def get_edit_requests(current_user):
         # Convert ObjectId to string and add simple display info
         for req in requests:
             req['_id'] = str(req['_id'])
-            req['user_id'] = str(req['user_id'])
 
-            # Convert datetime fields to string for JSON serialization
-            if 'created_at' in req:
-                req['created_at'] = req['created_at'].isoformat() if hasattr(req['created_at'], 'isoformat') else str(req['created_at'])
-            if 'updated_at' in req:
-                req['updated_at'] = req['updated_at'].isoformat() if hasattr(req['updated_at'], 'isoformat') else str(req['updated_at'])
-            if 'processed_at' in req:
-                req['processed_at'] = req['processed_at'].isoformat() if hasattr(req['processed_at'], 'isoformat') else str(req['processed_at'])
+            # Convert user_id (might be ObjectId or string)
+            if 'user_id' in req:
+                req['user_id'] = str(req['user_id'])
+
+            # Convert processed_by if present
+            if 'processed_by' in req and req['processed_by']:
+                req['processed_by'] = str(req['processed_by'])
+
+            # Convert datetime fields to string for JSON serialization (with UTC indicator)
+            if 'created_at' in req and req['created_at']:
+                req['created_at'] = (req['created_at'].isoformat() + 'Z') if hasattr(req['created_at'], 'isoformat') else str(req['created_at'])
+            if 'updated_at' in req and req['updated_at']:
+                req['updated_at'] = (req['updated_at'].isoformat() + 'Z') if hasattr(req['updated_at'], 'isoformat') else str(req['updated_at'])
+            if 'processed_at' in req and req['processed_at']:
+                req['processed_at'] = (req['processed_at'].isoformat() + 'Z') if hasattr(req['processed_at'], 'isoformat') else str(req['processed_at'])
+
+            # Convert applied_changes if it contains datetime or ObjectId objects
+            if 'applied_changes' in req and isinstance(req['applied_changes'], dict):
+                serialized_changes = {}
+                for key, value in req['applied_changes'].items():
+                    if hasattr(value, 'isoformat'):  # datetime object
+                        serialized_changes[key] = value.isoformat() + 'Z'
+                    elif isinstance(value, ObjectId):
+                        serialized_changes[key] = str(value)
+                    else:
+                        serialized_changes[key] = value
+                req['applied_changes'] = serialized_changes
+
+            # Catch-all: convert any remaining ObjectId or datetime fields
+            for key, value in list(req.items()):
+                if isinstance(value, ObjectId):
+                    req[key] = str(value)
+                elif isinstance(value, datetime):
+                    req[key] = value.isoformat() + 'Z'
 
             # Add simple status display without complex date parsing
             req['display_status'] = req.get('status', 'unknown').title()
@@ -3046,6 +3098,9 @@ def get_edit_requests(current_user):
         }), 200
         
     except Exception as e:
+        print(f"ERROR in get_edit_requests: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}'
@@ -3074,22 +3129,39 @@ def get_all_edit_requests(current_user):
         # Get requests sorted by audit_id
         requests = list(edit_requests_collection.find(query).sort('audit_id', -1).skip(skip).limit(limit))
 
-        # Simple conversion - just convert ObjectId to string, nothing else
+        # Convert all non-JSON-serializable objects
         for req in requests:
             req['_id'] = str(req['_id'])
-            req['user_id'] = str(req['user_id'])
+
+            # Convert user_id (might be ObjectId or string)
+            if 'user_id' in req:
+                req['user_id'] = str(req['user_id'])
+
+            # Add user_info object for frontend display
+            req['user_info'] = {
+                'email': req.get('user_email', 'Unknown'),
+                'username': req.get('user_email', 'Unknown').split('@')[0] if req.get('user_email') else 'Unknown'
+            }
 
             # Convert ObjectId fields if present
             if 'processed_by' in req and req['processed_by']:
                 req['processed_by'] = str(req['processed_by'])
 
-            # Convert datetime fields to string for JSON serialization
-            if 'created_at' in req:
-                req['created_at'] = req['created_at'].isoformat() if hasattr(req['created_at'], 'isoformat') else str(req['created_at'])
-            if 'updated_at' in req:
-                req['updated_at'] = req['updated_at'].isoformat() if hasattr(req['updated_at'], 'isoformat') else str(req['updated_at'])
-            if 'processed_at' in req:
-                req['processed_at'] = req['processed_at'].isoformat() if hasattr(req['processed_at'], 'isoformat') else str(req['processed_at'])
+            # Convert datetime fields to string for JSON serialization (with UTC indicator)
+            if 'created_at' in req and req['created_at']:
+                req['created_at'] = (req['created_at'].isoformat() + 'Z') if hasattr(req['created_at'], 'isoformat') else str(req['created_at'])
+            if 'updated_at' in req and req['updated_at']:
+                req['updated_at'] = (req['updated_at'].isoformat() + 'Z') if hasattr(req['updated_at'], 'isoformat') else str(req['updated_at'])
+            if 'processed_at' in req and req['processed_at']:
+                req['processed_at'] = (req['processed_at'].isoformat() + 'Z') if hasattr(req['processed_at'], 'isoformat') else str(req['processed_at'])
+
+            # Convert applied_changes if it contains datetime objects
+            if 'applied_changes' in req and isinstance(req['applied_changes'], dict):
+                for key, value in req['applied_changes'].items():
+                    if hasattr(value, 'isoformat'):  # datetime object
+                        req['applied_changes'][key] = value.isoformat()
+                    elif isinstance(value, ObjectId):
+                        req['applied_changes'][key] = str(value)
 
             # Simple status info
             req['status_display'] = req.get('status', 'unknown').title()
@@ -3162,9 +3234,9 @@ def approve_edit_request(current_user, request_id):
                 {
                     '$set': {
                         'status': 'approved',
-                        'processed_by': current_user['_id'],
+                        'processed_by': str(current_user['_id']),
                         'processed_at': datetime.now(timezone.utc),
-                        'admin_notes': request.get_json().get('admin_notes', '')
+                        'admin_notes': request.get_json().get('admin_notes', '') if request.get_json() else ''
                     }
                 }
             )
@@ -3220,29 +3292,39 @@ def approve_edit_request(current_user, request_id):
             
             # Add audit trail
             update_data['last_modified'] = datetime.now(timezone.utc)
-            update_data['modified_by'] = current_user['_id']
-            
+            update_data['modified_by'] = str(current_user['_id'])
+
             # Update the record
             emission_records_collection.update_one(
                 {'record_id': edit_request['record_id']},
                 {'$set': update_data}
             )
-            
+
+            # Prepare serializable version of update_data for storing in database
+            update_data_serializable = {}
+            for key, value in update_data.items():
+                if isinstance(value, datetime):
+                    update_data_serializable[key] = value.isoformat()
+                elif isinstance(value, ObjectId):
+                    update_data_serializable[key] = str(value)
+                else:
+                    update_data_serializable[key] = value
+
             # Update request status
             edit_requests_collection.update_one(
                 {'request_id': request_id},
                 {
                     '$set': {
                         'status': 'approved',
-                        'processed_by': current_user['_id'],
+                        'processed_by': str(current_user['_id']),
                         'processed_at': datetime.now(timezone.utc),
-                        'admin_notes': request.get_json().get('admin_notes', ''),
-                        'applied_changes': update_data
+                        'admin_notes': request.get_json().get('admin_notes', '') if request.get_json() else '',
+                        'applied_changes': update_data_serializable
                     }
                 }
             )
-            
-            # Log audit
+
+            # Log audit (with serializable data)
             log_audit(
                 current_user['_id'],
                 current_user.get('username', 'Unknown'),
@@ -3250,18 +3332,21 @@ def approve_edit_request(current_user, request_id):
                 {
                     'request_id': request_id,
                     'edited_record_id': edit_request['record_id'],
-                    'changes_applied': update_data,
+                    'changes_applied': update_data_serializable,
                     'original_user': edit_request['user_email']
                 }
             )
-            
+
             return jsonify({
                 'success': True,
                 'message': 'Edit request approved and changes applied successfully',
-                'applied_changes': update_data
+                'applied_changes': update_data_serializable
             }), 200
         
     except Exception as e:
+        print(f"ERROR in approve_edit_request: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}'
@@ -3296,7 +3381,7 @@ def reject_edit_request(current_user, request_id):
             {
                 '$set': {
                     'status': 'rejected',
-                    'processed_by': current_user['_id'],
+                    'processed_by': str(current_user['_id']),
                     'processed_at': datetime.now(timezone.utc),
                     'admin_notes': data.get('admin_notes', ''),
                     'rejection_reason': data.get('rejection_reason', 'No reason provided')
@@ -3332,17 +3417,34 @@ def reject_edit_request(current_user, request_id):
 def log_audit(user_id, username, action, details=None):
     """Helper function to log audit events"""
     try:
+        # Ensure user_id is always a string for consistency
+        user_id_str = str(user_id) if user_id else 'unknown'
+
+        # Serialize details to ensure all values are JSON-compatible
+        serialized_details = {}
+        if details:
+            for key, value in details.items():
+                if isinstance(value, (datetime, ObjectId)):
+                    serialized_details[key] = str(value)
+                elif isinstance(value, dict):
+                    # Recursively serialize nested dicts
+                    serialized_details[key] = {k: str(v) if isinstance(v, (datetime, ObjectId)) else v for k, v in value.items()}
+                else:
+                    serialized_details[key] = value
+
         audit_log = {
             'audit_id': generate_audit_id(),
-            'user_id': user_id,
+            'user_id': user_id_str,
             'username': username,
             'action': action,
-            'details': details or {},
+            'details': serialized_details,
             'timestamp': datetime.now(timezone.utc)
         }
         audits_collection.insert_one(audit_log)
     except Exception as e:
         print(f"Audit logging error: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__':
     print("Starting Carbon Accounting API...")

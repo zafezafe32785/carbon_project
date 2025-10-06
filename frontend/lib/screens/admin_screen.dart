@@ -963,10 +963,14 @@ class _AdminScreenState extends State<AdminScreen> with TickerProviderStateMixin
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final difference = now.difference(timestamp);
-    
+  String _formatTimestamp(DateTime? timestamp) {
+    if (timestamp == null) return 'Unknown time';
+
+    // Ensure we're comparing UTC times
+    final now = DateTime.now().toUtc();
+    final timestampUtc = timestamp.toUtc();
+    final difference = now.difference(timestampUtc);
+
     if (difference.inMinutes < 1) {
       return 'Just now';
     } else if (difference.inHours < 1) {
@@ -1186,7 +1190,7 @@ class _AdminScreenState extends State<AdminScreen> with TickerProviderStateMixin
     );
   }
 
-  Future<void> _resetUserPassword(int userId, String newPassword) async {
+  Future<void> _resetUserPassword(String userId, String newPassword) async {
     if (newPassword.isEmpty) {
       _showErrorSnackBar('Please enter a new password');
       return;
@@ -1241,7 +1245,7 @@ class _AdminScreenState extends State<AdminScreen> with TickerProviderStateMixin
     );
   }
 
-  Future<void> _deleteUser(int userId) async {
+  Future<void> _deleteUser(String userId) async {
     try {
       final result = await ApiService.deleteUser(userId);
       if (result['success']) {

@@ -79,14 +79,17 @@ class _EditRequestScreenState extends State<EditRequestScreen>
     });
     
     // Filter requests
+    print('DEBUG: Filtering ${_userRequests.length} requests with status filter: $_requestFilterStatus');
     _filteredRequests = _userRequests.where((request) {
-      bool statusMatch = _requestFilterStatus == 'all' || 
+      bool statusMatch = _requestFilterStatus == 'all' ||
                         request['status'] == _requestFilterStatus;
       bool queryMatch = query.isEmpty ||
                        request['request_type'].toString().toLowerCase().contains(query) ||
                        request['reason'].toString().toLowerCase().contains(query);
+      print('DEBUG: Request ${request['request_id']} - status: ${request['status']}, statusMatch: $statusMatch, queryMatch: $queryMatch');
       return statusMatch && queryMatch;
     }).toList();
+    print('DEBUG: After filtering: ${_filteredRequests.length} requests');
     
     // Sort requests by date (newest first)
     _filteredRequests.sort((a, b) {
@@ -100,31 +103,44 @@ class _EditRequestScreenState extends State<EditRequestScreen>
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final emissionsResult = await ApiService.getEmissions();
       final requestsResult = await ApiService.getEditRequests();
-      
+
+      print('DEBUG: emissionsResult = $emissionsResult');
+      print('DEBUG: emissionsResult success = ${emissionsResult['success']}');
+      print('DEBUG: emissionsResult data = ${emissionsResult['data']}');
+
+      print('DEBUG: requestsResult = $requestsResult');
+      print('DEBUG: requestsResult success = ${requestsResult['success']}');
+      print('DEBUG: requestsResult data = ${requestsResult['data']}');
+
       if (mounted) {
         setState(() {
           if (emissionsResult['success']) {
             _emissionRecords = List<Map<String, dynamic>>.from(
               emissionsResult['data']['emissions'] ?? []
             );
+            print('DEBUG: Loaded ${_emissionRecords.length} emission records');
           }
-          
+
           if (requestsResult['success']) {
             _userRequests = List<Map<String, dynamic>>.from(
               requestsResult['data']['requests'] ?? []
             );
+            print('DEBUG: Loaded ${_userRequests.length} requests');
+          } else {
+            print('DEBUG: requestsResult success is false or missing');
           }
-          
+
           _isLoading = false;
         });
-        
+
         _filterAndSortData();
       }
     } catch (e) {
+      print('DEBUG: Error loading data: $e');
       if (mounted) {
         setState(() => _isLoading = false);
         _showErrorMessage('Failed to load data: $e');
