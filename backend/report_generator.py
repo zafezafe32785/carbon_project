@@ -42,6 +42,21 @@ class CarbonReportGenerator:
         # Scope 1: Direct emissions (fuels, refrigerants, combustion)
         # Scope 2: Indirect emissions from purchased electricity/energy
 
+        # Thai month names for date formatting
+        self.thai_months = {
+            1: 'มกราคม', 2: 'กุมภาพันธ์', 3: 'มีนาคม', 4: 'เมษายน',
+            5: 'พฤษภาคม', 6: 'มิถุนายน', 7: 'กรกฎาคม', 8: 'สิงหาคม',
+            9: 'กันยายน', 10: 'ตุลาคม', 11: 'พฤศจิกายน', 12: 'ธันวาคม'
+        }
+
+        # Metric label translations (Thai labels for key metrics)
+        self.metric_labels_th = {
+            'total_emissions': 'การปล่อยก๊าซเรือนกระจกรวม',
+            'average_monthly': 'ค่าเฉลี่ยรายเดือน',
+            'reporting_period': 'ช่วงเวลารายงาน',
+            'record_count': 'จำนวนข้อมูลการปล่อย'
+        }
+
     def generate_report(self, user_id: str, start_date: str, end_date: str, 
                        report_format: str = 'GHG', file_type: str = 'PDF', 
                        language: str = 'EN', include_ai_insights: bool = True) -> Dict:
@@ -76,9 +91,14 @@ class CarbonReportGenerator:
             
             # Step 4: Generate report file based on type
             file_path = self._generate_report_file(report_content, report_format, file_type, language)
-            
+            print(f"\n{'='*60}")
+            print(f"REPORT FILE GENERATED")
+            print(f"{'='*60}")
+            print(f"  Returned file path: {file_path}")
+            print(f"  File type: {file_type}")
+
             # Step 5: Save to database with your schema
-            report_id = self._save_to_database(user_id, report_data, report_content, 
+            report_id = self._save_to_database(user_id, report_data, report_content,
                                              start_date, end_date, report_format, file_path, file_type, language)
             
             return {
@@ -563,21 +583,48 @@ class CarbonReportGenerator:
             else:
                 return "Trend analysis requires multiple reporting periods for meaningful assessment. Future reports will include comparative analysis to identify patterns and improvement opportunities."
 
+    def _format_date_thai(self, date_obj: datetime) -> str:
+        """Format date in Thai (e.g., 15 มกราคม 2025)"""
+        day = date_obj.day
+        month = self.thai_months[date_obj.month]
+        year = date_obj.year
+        return f"{day} {month} {year}"
+
+    def _format_date_range(self, start_date: datetime, end_date: datetime, language: str) -> str:
+        """Format date range based on language"""
+        if language == 'TH':
+            start_str = self._format_date_thai(start_date)
+            end_str = self._format_date_thai(end_date)
+            return f"{start_str} ถึง {end_str}"
+        else:
+            return f"{start_date.strftime('%d %B %Y')} - {end_date.strftime('%d %B %Y')}"
+
     def _create_report_structure(self, report_data: Dict, ai_content: Dict, report_format: str, language: str = 'EN') -> Dict:
         """Create structured report content"""
-        
+
         # Calculate additional metrics
         avg_monthly_emissions = report_data['total_emissions'] / max(len(report_data['monthly_data']), 1)
-        
+
+        # Format date range based on language
+        date_range = self._format_date_range(report_data['period_start'], report_data['period_end'], language)
+
+        # Format subtitle with Thai month names if needed
+        if language == 'TH':
+            start_month = self.thai_months[report_data['period_start'].month]
+            end_month = self.thai_months[report_data['period_end'].month]
+            subtitle = f'{report_data["organization"]} - {start_month} {report_data["period_start"].year} to {end_month} {report_data["period_end"].year}'
+        else:
+            subtitle = f'{report_data["organization"]} - {report_data["period_start"].strftime("%B %Y")} to {report_data["period_end"].strftime("%B %Y")}'
+
         return {
             'title': f'{report_format} Carbon Emissions Report',
-            'subtitle': f'{report_data["organization"]} - {report_data["period_start"].strftime("%B %Y")} to {report_data["period_end"].strftime("%B %Y")}',
+            'subtitle': subtitle,
             'executive_summary': ai_content.get('executive_summary', ''),
             'key_metrics': {
                 'total_emissions': f"{report_data['total_emissions']:.2f} kg CO2e",
                 'average_monthly': f"{avg_monthly_emissions:.2f} kg CO2e/month",
-                'reporting_period': f"{report_data['period_start'].strftime('%d %B %Y')} - {report_data['period_end'].strftime('%d %B %Y')}",
-                'record_count': f"{report_data['record_count']} emission records"
+                'reporting_period': date_range,
+                'record_count': f"{report_data['record_count']}"
             },
             'emissions_by_scope': report_data['emissions_by_scope'],
             'emissions_by_category': report_data['emissions_by_category'],
@@ -1103,11 +1150,19 @@ class CarbonReportGenerator:
     def _generate_pdf_report(self, content: Dict, report_format: str, language: str = 'EN') -> str:
         """Generate professional PDF report using Word-to-PDF conversion for better quality"""
         try:
+            print(f"\n{'='*60}")
+            print(f"PDF GENERATION REQUEST")
+            print(f"{'='*60}")
+            print(f"  Language: {language}")
+            print(f"  Using Word-to-PDF conversion for Thai formatting")
             # Use Word-to-PDF conversion for both Thai and English for consistency
             return self._generate_pdf_via_word(content, report_format, language)
 
         except Exception as e:
-            print(f"PDF generation error: {str(e)}")
+            print(f"✗ PDF generation error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            print(f"⚠ Falling back to direct PDF generation (old format)")
             # Fallback to direct PDF generation
             return self._generate_direct_pdf(content, report_format, language)
 
@@ -1286,7 +1341,11 @@ class CarbonReportGenerator:
                 metrics_data.append(['Metric', 'Value'])
 
             for key, value in content['key_metrics'].items():
-                display_key = key.replace('_', ' ').title()
+                # Use Thai labels if language is Thai, otherwise use English
+                if language == 'TH' and key in self.metric_labels_th:
+                    display_key = self.metric_labels_th[key]
+                else:
+                    display_key = key.replace('_', ' ').title()
                 metrics_data.append([display_key, str(value)])
 
             metrics_table = Table(metrics_data)
@@ -1449,7 +1508,11 @@ class CarbonReportGenerator:
                 metrics_data.append(['Metric', 'Value'])
 
             for key, value in content['key_metrics'].items():
-                display_key = key.replace('_', ' ').title()
+                # Use Thai labels if language is Thai, otherwise use English
+                if language == 'TH' and key in self.metric_labels_th:
+                    display_key = self.metric_labels_th[key]
+                else:
+                    display_key = key.replace('_', ' ').title()
                 metrics_data.append([display_key, str(value)])
 
             metrics_table = Table(metrics_data)
@@ -1614,7 +1677,11 @@ class CarbonReportGenerator:
             row += 1
             
             for key, value in content['key_metrics'].items():
-                ws_summary[f'A{row}'] = key.replace('_', ' ').title()
+                # Use Thai labels if language is Thai, otherwise use English
+                if language == 'TH' and key in self.metric_labels_th:
+                    ws_summary[f'A{row}'] = self.metric_labels_th[key]
+                else:
+                    ws_summary[f'A{row}'] = key.replace('_', ' ').title()
                 ws_summary[f'B{row}'] = value
                 row += 1
             
@@ -1660,6 +1727,9 @@ class CarbonReportGenerator:
             
             # Save workbook
             wb.save(filepath)
+            print(f"✓ Excel document saved: {filepath}")
+            print(f"✓ File exists: {os.path.exists(filepath)}")
+            print(f"✓ Absolute path: {os.path.abspath(filepath)}")
             return filepath
             
         except Exception as e:
@@ -1777,9 +1847,15 @@ class CarbonReportGenerator:
             # Add metrics data
             for key, value in content['key_metrics'].items():
                 row_cells = metrics_table.add_row().cells
-                row_cells[0].text = key.replace('_', ' ').title()
+
+                # Use Thai labels if language is Thai, otherwise use English
+                if language == 'TH' and key in self.metric_labels_th:
+                    row_cells[0].text = self.metric_labels_th[key]
+                else:
+                    row_cells[0].text = key.replace('_', ' ').title()
+
                 row_cells[1].text = str(value)
-                
+
                 # Style data rows
                 for cell in row_cells:
                     cell.paragraphs[0].runs[0].font.size = Pt(10)
@@ -1920,17 +1996,29 @@ class CarbonReportGenerator:
             
             # Save document
             doc.save(filepath)
+            print(f"✓ Word document saved: {filepath}")
+            print(f"✓ File exists: {os.path.exists(filepath)}")
+            print(f"✓ Absolute path: {os.path.abspath(filepath)}")
             return filepath
             
         except Exception as e:
-            print(f"Word generation error: {str(e)}")
+            print(f"✗ Word generation error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
 
-    def _save_to_database(self, user_id: str, report_data: Dict, report_content: Dict, 
-                         start_date: str, end_date: str, report_format: str, file_path: str, 
+    def _save_to_database(self, user_id: str, report_data: Dict, report_content: Dict,
+                         start_date: str, end_date: str, report_format: str, file_path: str,
                          file_type: str, language: str) -> str:
         """Save report to database using your MongoDB schema"""
-        
+
+        print(f"\n{'='*60}")
+        print(f"SAVING TO DATABASE")
+        print(f"{'='*60}")
+        print(f"  File path to save: {file_path}")
+        print(f"  File type: {file_type}")
+        print(f"  Language: {language}")
+
         # Generate unique report ID by finding the highest existing number
         # This prevents skipping numbers even with concurrent requests
         latest_report = reports_collection.find_one(

@@ -277,9 +277,9 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
       if (response['success'] == true) {
         _showSuccessSnackBar('Report generated successfully!');
         _loadGeneratedReports(); // Refresh the reports list
-        
-        // Show generation details
-        _showReportGeneratedDialog(response);
+
+        // Directly show download dialog
+        _downloadReport(response['report_id']);
       } else {
         _showErrorSnackBar(response['message'] ?? 'Failed to generate report');
       }
@@ -465,48 +465,6 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
                 foregroundColor: Colors.white,
               ),
               child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showReportGeneratedDialog(Map<String, dynamic> response) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Report Generated Successfully'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Report ID: ${response['report_id']}'),
-              const SizedBox(height: 8),
-              Text('Generated at: ${response['generated_at']}'),
-              const SizedBox(height: 8),
-              if (response['ai_insights'] != null) ...[
-                const Text('AI Insights included:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text('• Executive Summary'),
-                Text('• Key Findings (${response['ai_insights']['key_findings']?.length ?? 0})'),
-                Text('• Recommendations (${response['ai_insights']['recommendations']?.length ?? 0})'),
-                Text('• Trend Analysis'),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _downloadReport(response['report_id']);
-              },
-              child: const Text('Download Files'),
             ),
           ],
         );
@@ -1067,10 +1025,6 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
                                 Text('Format: ${report['report_format'] ?? 'Unknown'}'),
                                 Text('Created: ${report['generated_at'] ?? report['create_date'] ?? 'Unknown'}'),
                               ],
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.download),
-                              onPressed: () => _downloadReport(report['report_id']),
                             ),
                           ),
                         );

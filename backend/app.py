@@ -2127,22 +2127,32 @@ def download_report(current_user, report_id):
             'report_id': report_id,
             'user_id': current_user['_id']
         })
-        
+
+        print(f"\n{'='*60}")
+        print(f"DOWNLOAD REQUEST for report_id: {report_id}")
+        print(f"{'='*60}")
+
         if not report:
+            print(f"✗ Report not found in database for user {current_user['_id']}")
             return jsonify({
                 'success': False,
                 'message': 'Report not found'
             }), 404
-        
+
+        print(f"✓ Report found in database")
+        print(f"  File type: {report.get('file_type', 'N/A')}")
+
         # Try both old and new field names for backward compatibility
         file_path_from_db = report.get('file_path') or report.get('pdf_path')
         if not file_path_from_db:
+            print(f"✗ No file_path or pdf_path in report document")
+            print(f"  Report keys: {list(report.keys())}")
             return jsonify({
                 'success': False,
-                'message': 'Report file path not found'
+                'message': 'Report file path not found in database'
             }), 404
-        
-        print(f"Original file path from DB: {file_path_from_db}")
+
+        print(f"✓ Original file path from DB: {file_path_from_db}")
         
         # Handle different path scenarios
         file_path = None
@@ -2198,26 +2208,52 @@ def download_report(current_user, report_id):
         # If requesting download info, return file information
         if get_info:
             file_size = os.path.getsize(file_path)
-            file_name = f'carbon_report_{report_id}.pdf'
-            
+
+            # Determine file extension and name from actual file path
+            file_extension = os.path.splitext(file_path)[1]  # e.g., '.pdf', '.docx', '.xlsx'
+            file_type = report.get('file_type', 'PDF').upper()
+
+            # Map file type to extension if not in path
+            if not file_extension:
+                extension_map = {'PDF': '.pdf', 'WORD': '.docx', 'EXCEL': '.xlsx'}
+                file_extension = extension_map.get(file_type, '.pdf')
+
+            file_name = f'carbon_report_{report_id}{file_extension}'
+
             return jsonify({
                 'success': True,
                 'download_url': f'/api/reports/download/{report_id}',
                 'file_name': file_name,
                 'file_size': file_size,
+                'file_type': file_type,
                 'report_format': report.get('report_format', 'GHG'),
                 'language': report.get('language', 'EN'),
                 'generated_at': report.get('generated_at', report.get('create_date')),
                 'message': 'File ready for download'
             }), 200
-        
+
         # Otherwise, serve the file for download
         from flask import send_file
+
+        # Determine correct MIME type based on file extension
+        file_extension = os.path.splitext(file_path)[1].lower()
+        mime_types = {
+            '.pdf': 'application/pdf',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.doc': 'application/msword',
+            '.xls': 'application/vnd.ms-excel'
+        }
+        mimetype = mime_types.get(file_extension, 'application/octet-stream')
+
+        # Get download filename with correct extension
+        download_filename = f'carbon_report_{report_id}{file_extension}'
+
         return send_file(
             file_path,
             as_attachment=True,
-            download_name=f'carbon_report_{report_id}.pdf',
-            mimetype='application/pdf'
+            download_name=download_filename,
+            mimetype=mimetype
         )
         
     except Exception as e:
