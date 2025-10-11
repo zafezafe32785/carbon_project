@@ -19,6 +19,9 @@ from typing import Dict, Optional, List, Tuple
 import logging
 import re
 from datetime import datetime
+# Import extraction functions from external scripts
+from extract_mea_reading import extract_from_pdf as extract_mea, visualize_coordinates as visualize_mea
+from extract_pea_reading import extract_from_pdf as extract_pea, visualize_coordinates as visualize_pea
 
 # Email validation regex (RFC 5322 simplified)
 EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
@@ -89,6 +92,107 @@ app.config.from_object(Config)
 # Initialize PyMongo
 mongo = PyMongo(app)
 
+# Debug endpoint to check report generator version
+@app.route('/api/debug/report-version', methods=['GET'])
+def get_report_generator_version():
+    """Check which version of report generator is loaded"""
+    import report_generator
+    import importlib
+
+    # Try to get version info
+    version_info = {
+        'module_file': getattr(report_generator, '__file__', 'unknown'),
+        'has_new_methods': {
+            '_generate_emissions_breakdown': hasattr(report_generator.CarbonReportGenerator, '_generate_emissions_breakdown'),
+            '_generate_data_quality': hasattr(report_generator.CarbonReportGenerator, '_generate_data_quality'),
+            '_generate_conclusion': hasattr(report_generator.CarbonReportGenerator, '_generate_conclusion'),
+            '_generate_methodology': hasattr(report_generator.CarbonReportGenerator, '_generate_methodology')
+        },
+        'doc_string': report_generator.__doc__[:200] if report_generator.__doc__ else 'No doc'
+    }
+
+    return jsonify({
+        'success': True,
+        'version_info': version_info
+    }), 200
+
+@app.route('/api/debug/visualize-coordinates', methods=['POST'])
+def visualize_bill_coordinates():
+    """
+    Debug endpoint to visualize OCR extraction coordinates on a bill
+    Upload a PDF and it will return an image with red boxes showing where it's extracting from
+    """
+    try:
+        import tempfile
+        import base64
+        from io import BytesIO
+
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'message': 'No file uploaded'}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({'success': False, 'message': 'No file selected'}), 400
+
+        if not file.filename.endswith('.pdf'):
+            return jsonify({'success': False, 'message': 'Only PDF files are supported'}), 400
+
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            file.save(tmp_file.name)
+            tmp_pdf_path = tmp_file.name
+
+        try:
+            # Detect bill format using the OCR processor
+            file.seek(0)
+            pdf_bytes = file.read()
+
+            ocr_processor = ThaiElectricityBillOCR()
+            pil_image = ocr_processor.render_pdf_at_high_dpi(pdf_bytes, dpi=300)
+            width, height = pil_image.size
+            aspect_ratio = height / width
+            bill_format = 'pea' if aspect_ratio > 1.3 else 'mea'
+
+            # Get coordinates for this format
+            coords = ocr_processor.crop_coords.get(bill_format, {})
+
+            # Generate visualization
+            if bill_format == 'mea':
+                img = visualize_mea(tmp_pdf_path, coords, dpi=300)
+            else:
+                img = visualize_pea(tmp_pdf_path, coords, dpi=300)
+
+            # Convert image to base64 for JSON response
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode()
+
+            return jsonify({
+                'success': True,
+                'bill_format': bill_format,
+                'aspect_ratio': aspect_ratio,
+                'image_size': f"{width}x{height}",
+                'coordinates': coords,
+                'image_data': f"data:image/png;base64,{img_base64}",
+                'message': f'Visualization generated for {bill_format.upper()} bill'
+            }), 200
+
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(tmp_pdf_path)
+            except Exception as e:
+                print(f"Warning: Could not delete temp file: {e}")
+
+    except Exception as e:
+        logging.exception("Visualization error")
+        return jsonify({
+            'success': False,
+            'message': f'Visualization failed: {str(e)}'
+        }), 500
+
 # Enable CORS with specific configuration
 CORS(app, origins=["*"], allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
@@ -133,7 +237,21 @@ class ThaiElectricityBillOCR:
     def __init__(self):
         # Configure Tesseract for optimal Thai + English recognition
         self.tesseract_config = '--oem 3 --psm 6 -l tha+eng'
-        
+
+        # Coordinate-based crop boxes as PIXEL COORDINATES at 300 DPI
+        # Format: (x0, y0, x1, y1) in pixels
+        # These coordinates match the external extraction scripts
+        self.crop_coords = {
+            'mea': {
+                "จำนวนหน่วย": (1020, 720, 1200, 870),
+                "วันที่จดเลขอ่าน": (400, 720, 600, 870),
+            },
+            'pea': {
+                "วันที่อ่านหน่วย": (725, 550, 950, 700),
+                "จำนวนหน่วย": (800, 745, 1000, 900),
+            }
+        }
+
         # Bill format patterns
         self.bill_patterns = {
             'mea': {
@@ -195,6 +313,61 @@ class ThaiElectricityBillOCR:
             print(f"Table detection failed: {str(e)}, using full image")
             return None
 
+    def render_pdf_at_high_dpi(self, pdf_bytes: bytes, dpi: int = 300) -> Image.Image:
+        """Render PDF at high DPI for accurate coordinate-based cropping"""
+        try:
+            import fitz  # PyMuPDF
+            from PIL import Image
+            import io
+
+            # Open PDF from bytes
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            page = doc.load_page(0)  # First page
+
+            # Render at specified DPI
+            pix = page.get_pixmap(dpi=dpi)
+
+            # Convert to PIL Image
+            img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+
+            print(f"Rendered PDF at {dpi} DPI: {img.size[0]}x{img.size[1]} pixels")
+            return img
+
+        except Exception as e:
+            logging.exception("PDF rendering failed")
+            raise Exception(f"PDF rendering failed: {str(e)}")
+
+    def extract_field_by_coordinates(self, img: Image.Image, coords_pct: tuple, field_name: str) -> str:
+        """Extract text from specific coordinates (percentages converted to pixels)"""
+        try:
+            from PIL import Image
+
+            # Convert percentage coordinates to actual pixels
+            width, height = img.size
+            x0_pct, y0_pct, x1_pct, y1_pct = coords_pct
+            x0 = int(x0_pct * width)
+            y0 = int(y0_pct * height)
+            x1 = int(x1_pct * width)
+            y1 = int(y1_pct * height)
+
+            # Crop the region
+            region = img.crop((x0, y0, x1, y1))
+
+            print(f"  Cropping {field_name} at ({x0}, {y0}, {x1}, {y1}) from {width}x{height}")
+
+            # Convert PIL Image to numpy array for OCR
+            region_array = np.array(region)
+
+            # Run OCR on the cropped region
+            text = pytesseract.image_to_string(region_array, lang='tha+eng', config=self.tesseract_config).strip()
+
+            print(f"  OCR Result for {field_name}: '{text}'")
+            return text
+
+        except Exception as e:
+            logging.exception(f"Field extraction failed for {field_name}")
+            return ""
+
     def preprocess_image(self, image_bytes: bytes) -> np.ndarray:
         """Enhanced preprocessing - AUTO-DETECT if image is already cropped or full bill"""
         try:
@@ -216,14 +389,30 @@ class ThaiElectricityBillOCR:
                 processed_image = image
             else:
                 print("✓ Detected: Full bill image - cropping to table region")
-                table_region = image[0:int(height * 0.30), :]
+                # Different cropping for MEA vs PEA
+                if aspect_ratio > 1.3:
+                    # PEA bills - focus on upper-middle section with usage details table
+                    # Skip top header (10%) and take next 45% where usage table is
+                    crop_top = int(height * 0.10)
+                    crop_bottom = int(height * 0.55)
+                    # Use full width
+                    table_region = image[crop_top:crop_bottom, :]
+                    print(f"  (PEA format) Cropped usage section (10%-55%): {table_region.shape[1]}x{table_region.shape[0]}")
+                else:
+                    # MEA bills - crop top 45%
+                    table_region = image[0:int(height * 0.45), :]
+                    print(f"  (MEA format) Cropped to: {table_region.shape[1]}x{table_region.shape[0]}")
+
                 processed_image = table_region
-                print(f"  Cropped to: {processed_image.shape[1]}x{processed_image.shape[0]}")
             
-            # Resize to optimal OCR size
+            # Resize to optimal OCR size (higher for PEA)
             height, width = processed_image.shape[:2]
-            if width < 2000:
-                scale = 2000 / width
+
+            # Use higher resolution for PEA bills
+            target_width = 3000 if aspect_ratio > 1.3 else 2000
+
+            if width < target_width:
+                scale = target_width / width
                 new_width = int(width * scale)
                 new_height = int(height * scale)
                 processed_image = cv2.resize(processed_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
@@ -237,56 +426,99 @@ class ThaiElectricityBillOCR:
             
             # Convert to grayscale
             gray = cv2.cvtColor(processed_image, cv2.COLOR_BGR2GRAY)
-            
+
+            # For PEA bills (tall format), use minimal preprocessing to preserve quality
+            if aspect_ratio > 1.3:
+                print("Using minimal preprocessing for PEA bill")
+                # Simple threshold only - preserve original quality
+                _, result = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                return result
+
+            # For MEA bills, use full preprocessing
             # Denoise
             denoised = cv2.fastNlMeansDenoising(gray, h=8)
-            
+
             # Enhance contrast
             clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
             enhanced = clahe.apply(denoised)
-            
+
             # Sharpen
             kernel_sharpen = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
             sharpened = cv2.filter2D(enhanced, -1, kernel_sharpen)
-            
+
             # Adaptive threshold
             binary = cv2.adaptiveThreshold(
-                sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                 cv2.THRESH_BINARY, 15, 5
             )
-            
+
             # Clean up
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
             result = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-            
+
             return result
             
         except Exception as e:
             logging.exception("Image preprocessing failed")
             raise Exception(f"Image preprocessing failed: {str(e)}")
 
-    def extract_text_with_confidence(self, preprocessed_image: np.ndarray) -> Tuple[str, float]:
+    def extract_text_with_paddle(self, preprocessed_image: np.ndarray) -> Tuple[str, float]:
+        """Extract text using PaddleOCR (better for Thai text)"""
+        try:
+            # Lazy load PaddleOCR
+            if self.paddle_ocr is None:
+                from paddleocr import PaddleOCR
+                self.paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+
+            # PaddleOCR expects BGR image
+            result = self.paddle_ocr.ocr(preprocessed_image, cls=True)
+
+            # Extract text and confidence
+            lines = []
+            confidences = []
+            if result and result[0]:
+                for line in result[0]:
+                    if line:
+                        text = line[1][0]
+                        conf = line[1][1]
+                        lines.append(text)
+                        confidences.append(conf)
+
+            raw_text = '\n'.join(lines)
+            avg_confidence = sum(confidences) / len(confidences) * 100 if confidences else 0
+
+            return self.clean_and_correct_text(raw_text), avg_confidence
+
+        except Exception as e:
+            logging.exception("PaddleOCR extraction failed")
+            raise Exception(f"PaddleOCR failed: {str(e)}")
+
+    def extract_text_with_confidence(self, preprocessed_image: np.ndarray, use_paddle: bool = False) -> Tuple[str, float]:
         """Extract text with confidence scoring"""
         try:
+            if use_paddle:
+                return self.extract_text_with_paddle(preprocessed_image)
+
+            # Use Tesseract
             # Get text with confidence data
             data = pytesseract.image_to_data(
-                preprocessed_image, 
+                preprocessed_image,
                 config=self.tesseract_config,
                 output_type=pytesseract.Output.DICT
             )
-            
+
             # Calculate average confidence
             confidences = [int(conf) for conf in data['conf'] if int(conf) > 0]
             avg_confidence = sum(confidences) / len(confidences) if confidences else 0
-            
+
             # Extract text
             raw_text = pytesseract.image_to_string(
-                preprocessed_image, 
+                preprocessed_image,
                 config=self.tesseract_config
             )
-            
+
             return self.clean_and_correct_text(raw_text), avg_confidence
-            
+
         except Exception as e:
             logging.exception("OCR text extraction failed")
             raise Exception(f"Text extraction failed: {str(e)}")
@@ -338,124 +570,247 @@ class ThaiElectricityBillOCR:
                 return 'mea'  # Default to MEA format
 
     def extract_usage_amount(self, text: str, bill_format: str) -> Optional[float]:
-        """Extract usage - OPTIMIZED for clear table images"""
-        
-        print(f"\n=== Extracting Usage Amount ===")
-        print(f"Full text:\n{text}\n{'='*50}\n")
-        
-        # For clear zoomed table images, the structure is very predictable:
-        # Header row: วันที่จดเลขอ่าน | เลขอ่านครั้งหลัง | เลขอ่านครั้งก่อน | จำนวนหน่วย | ตัวคูณ
-        # Data row:   12/04/68 09:59  | 69601           | 68211           | 1390      | 1.2
-        
+        """Extract usage by finding table boundaries and exact column position"""
+
+        print(f"\n=== Extracting Usage Amount (Bill Format: {bill_format}) ===")
+
+        # Define table headers for each bill format
+        if bill_format == 'mea':
+            date_header = 'วันที่จดเลขอ่าน'
+            usage_header = 'จำนวนหน่วย'
+            alt_usage_header = 'จํานวนหน่วย'  # Alternative spelling
+        else:  # pea
+            date_header = 'วันที่อ่านหน่วย'
+            usage_header = 'จำนวนที่ใช้'
+            alt_usage_header = 'จํานวนที่ใช้'  # Alternative spelling
+
         lines = text.split('\n')
-        
-        # STRATEGY 1: Find the header with "จำนวนหน่วย" and extract from table structure
-        usage_keywords = ['จำนวนหน่วย', 'จํานวนหน่วย', 'kWh', 'kwh']
-        
+
+        # STRATEGY 1: Find table header row and locate usage column
+        print(f"Looking for table headers: '{date_header}' and '{usage_header}'...")
+
         for line_idx, line in enumerate(lines):
-            # Skip very short lines
-            if len(line.strip()) < 5:
-                continue
-            
-            # Check if this line contains usage keyword
-            has_keyword = any(kw in line for kw in usage_keywords)
-            if not has_keyword:
-                continue
-            
-            print(f"Line {line_idx} (has keyword): {line}")
-            
-            # This is likely the header row
-            # The data should be in the SAME line (if table collapsed) or NEXT line
-            
-            # Extract all 3-5 digit numbers from this line and next few lines
-            search_lines = lines[line_idx:min(line_idx + 3, len(lines))]
-            
-            for search_idx, search_line in enumerate(search_lines):
-                print(f"  Searching line {line_idx + search_idx}: {search_line[:100]}")
-                
-                # Find all numbers that could be usage (3-5 digits)
-                numbers = re.findall(r'\b(\d{3,5})\b', search_line)
-                
-                for num_str in numbers:
-                    try:
-                        value = float(num_str)
-                        print(f"    Candidate: {value}")
-                        
-                        # Validate
-                        # Skip dates (day/month are <= 31/12)
-                        if value <= 31:
-                            print(f"      ✗ Skip (too small - likely date)")
-                            continue
-                        
-                        # Skip years
-                        if (1900 <= value <= 2100) or (2400 <= value <= 2700):
-                            print(f"      ✗ Skip (year range)")
-                            continue
-                        
-                        # Skip meter readings (typically 5 digits starting with 6-9)
-                        # 69601, 68211 are meter readings, not usage
-                        if value >= 60000 and len(num_str) == 5:
-                            print(f"      ✗ Skip (meter reading)")
-                            continue
-                        
-                        # Must be in realistic usage range
-                        if not (50 <= value <= 50000):
-                            print(f"      ✗ Skip (outside usage range)")
-                            continue
-                        
-                        # PASSED all checks
-                        print(f"    ✓ ACCEPTED: {value} kWh")
-                        return value
-                        
-                    except ValueError:
-                        pass
-        
-        # STRATEGY 2: Fallback - look for the pattern more broadly
-        print("\nFallback: Pattern matching across full text...")
-        
-        # Common patterns in Thai bills
+            # Check if this line contains both date header AND usage header (table header row)
+            has_date = date_header in line or date_header.replace('ำ', 'า') in line
+            has_usage = usage_header in line or alt_usage_header in line or 'kWh' in line
+
+            if has_date and has_usage:
+                print(f"✓ Found table header at line {line_idx}: {line[:100]}")
+
+                # Try to find the position of usage column in header
+                usage_col_start = -1
+                for uh in [usage_header, alt_usage_header, 'kWh']:
+                    if uh in line:
+                        usage_col_start = line.index(uh)
+                        print(f"  Usage column starts at position {usage_col_start}")
+                        break
+
+                # Search the next few lines for the data row
+                for data_line_idx in range(line_idx + 1, min(line_idx + 5, len(lines))):
+                    data_line = lines[data_line_idx]
+
+                    if len(data_line.strip()) < 10:
+                        continue
+
+                    print(f"  Checking data line {data_line_idx}: {data_line[:100]}")
+
+                    # Extract all numbers from this line with their positions
+                    numbers_with_pos = []
+                    for match in re.finditer(r'\b(\d{2,5})\b', data_line):
+                        num_val = float(match.group(1))
+                        num_pos = match.start()
+                        numbers_with_pos.append((num_val, num_pos, match.group(1)))
+
+                    # Find number closest to the usage column position
+                    if usage_col_start > 0 and numbers_with_pos:
+                        # Sort by distance from usage column
+                        numbers_with_pos.sort(key=lambda x: abs(x[1] - usage_col_start))
+
+                        for value, pos, num_str in numbers_with_pos:
+                            print(f"    Candidate at pos {pos}: {value}")
+
+                            # Validate range
+                            if 50 <= value <= 5000:
+                                # Skip years
+                                if (1900 <= value <= 2100) or (2400 <= value <= 2700):
+                                    print(f"      ✗ Skip (year)")
+                                    continue
+                                # Skip large meter readings
+                                if value >= 10000 and len(num_str) == 5:
+                                    print(f"      ✗ Skip (meter reading)")
+                                    continue
+
+                                print(f"    ✓ ACCEPTED (from table column): {value} kWh")
+                                return value
+                    else:
+                        # No column position found, use validation rules
+                        for value, pos, num_str in numbers_with_pos:
+                            if value <= 31:  # Skip dates
+                                continue
+                            if (1900 <= value <= 2100) or (2400 <= value <= 2700):  # Skip years
+                                continue
+                            if value >= 10000 and len(num_str) == 5:  # Skip meter readings
+                                continue
+                            if 50 <= value <= 5000:
+                                print(f"    ✓ ACCEPTED: {value} kWh")
+                                return value
+
+        # STRATEGY 2: Pattern matching with specific headers and decimals
+        print("\nStrategy 2: Pattern matching with headers...")
+
+        # For PEA, look for "จำนวนที่ใช้" or related patterns with decimal support
         patterns = [
-            r'จำนวนหน่วย[^\d]{0,30}(\d{3,5})\b',  # จำนวนหน่วย ... 1390
-            r'kWh[^\d]{0,20}(\d{3,5})\b',          # kWh ... 1390
-            r'\(kWh\)[^\d]{0,20}(\d{3,5})\b',      # (kWh) ... 1390
+            # Look for pattern: "พลังงานไฟฟ้า number number number (หน่วย)" - MOST RELIABLE
+            r'พลังงานไฟฟ้า[^\d]+(\d{1,5}(?:\.\d+)?)[^\d]+(\d{1,5}(?:\.\d+)?)[^\d]+(\d{1,5}(?:\.\d{1,2})?)\s*\(หน่วย\)',
+            # Standard headers
+            rf'{usage_header}[^\d]{{0,50}}(\d{{1,5}}(?:\.\d{{1,2}})?)\b',
+            rf'{alt_usage_header}[^\d]{{0,50}}(\d{{1,5}}(?:\.\d{{1,2}})?)\b',
+            r'จำนวนที่ใช้[^\d]{0,50}(\d{1,5}(?:\.\d{1,2})?)\b',
+            r'Comsumption\s+Unit[^\d]{0,50}(\d{1,5}(?:\.\d{1,2})?)\b',
         ]
-        
+
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 try:
-                    value = float(match.group(1))
-                    if 50 <= value <= 50000:
-                        print(f"  ✓ Pattern match: {value} kWh")
-                        return value
-                except ValueError:
+                    # For the first pattern (พลังงานไฟฟ้า), extract the third number (usage)
+                    if 'พลังงานไฟฟ้า' in pattern:
+                        if len(match.groups()) >= 3:
+                            recent = float(match.group(1))
+                            previous = float(match.group(2))
+                            usage = float(match.group(3))
+                            expected = abs(recent - previous)
+                            print(f"  Found พลังงานไฟฟ้า pattern: {recent} - {previous} = {usage}")
+                            # Verify the usage matches the difference
+                            if abs(usage - expected) <= max(5, expected * 0.15):
+                                print(f"  ✓ Pattern match verified: {usage} kWh")
+                                return usage
+                    else:
+                        value = float(match.group(1))
+                        if 10 <= value <= 5000:
+                            print(f"  ✓ Pattern match: {value} kWh")
+                            return value
+                except (ValueError, IndexError):
                     pass
         
-        # STRATEGY 3: Last resort - find ANY valid usage number
+        # STRATEGY 3: Look for usage RIGHT AFTER previous meter reading
+        print("\nStrategy 3: Finding usage right after previous meter reading...")
+
+        # Find all numbers (2-5 digits) with their positions and context
+        all_numbers = []
+        for match in re.finditer(r'\b(\d{2,5}(?:\.\d{1,2})?)\b', text):
+            num_str = match.group(1)
+            # Get context to filter out phone numbers, dates, etc.
+            context_start = max(0, match.start() - 30)
+            context_end = min(len(text), match.end() + 30)
+            context = text[context_start:context_end].lower()
+
+            # Skip phone numbers (has โทร or 0- pattern)
+            if 'โทร' in context or text[max(0, match.start()-2):match.start()] == '0-':
+                continue
+
+            # Skip invoice numbers (very long numbers)
+            if len(num_str.replace('.', '')) > 10:
+                continue
+
+            try:
+                num_val = float(num_str)
+                all_numbers.append((match.start(), num_val, num_str, context))
+            except ValueError:
+                continue
+
+        # Look for pattern: meter_reading_1 → meter_reading_2 → usage
+        # MEA: 3485 → 3311 → 174 (4-5 digits each)
+        # PEA: 59.000 → 14.000 → 45.00 (with decimals)
+
+        for i in range(len(all_numbers) - 2):
+            _, num1, _, _ = all_numbers[i]
+            _, num2, _, _ = all_numbers[i + 1]
+            _, num3, _, _ = all_numbers[i + 2]
+
+            # Calculate expected usage
+            expected_usage = abs(num1 - num2)
+
+            # Check if this looks like meter readings followed by usage
+            # Two scenarios:
+            # MEA: Large readings (1000+) like 3485 → 3311 → 174
+            # PEA: Small readings (10-1000) like 59 → 14 → 45
+
+            is_valid_mea_pattern = (
+                num1 >= 1000 and num2 >= 1000 and  # MEA: 4+ digit readings
+                50 <= num3 <= 5000 and
+                num3 < num1 * 0.5 and num3 < num2 * 0.5
+            )
+
+            is_valid_pea_pattern = (
+                10 <= num1 <= 1000 and 10 <= num2 <= 1000 and  # PEA: 2-4 digit readings
+                10 <= num3 <= 5000 and
+                expected_usage >= 10  # Reasonable usage
+            )
+
+            if is_valid_mea_pattern or is_valid_pea_pattern:
+                # Check if third number matches the difference
+                tolerance = max(5, expected_usage * 0.15)  # 15% tolerance for OCR errors
+                if abs(num3 - expected_usage) <= tolerance:
+                    print(f"  Found meter pattern: {num1} → {num2} → {num3}")
+                    print(f"    Expected usage from difference: {expected_usage:.2f}")
+                    print(f"    Tolerance: ±{tolerance:.2f}")
+                    print(f"  ✓ ACCEPTED (matches meter difference): {num3} kWh")
+                    return float(num3)
+
+        # STRATEGY 4: Last resort - find ANY valid usage number with better context filtering
         print("\nLast resort: Finding any valid usage number...")
-        all_numbers = re.findall(r'\b(\d{3,5})\b', text)
-        
-        for num_str in all_numbers:
+
+        # Find all 2-5 digit numbers with surrounding context
+        for match in re.finditer(r'\b(\d{2,5})\b', text):
+            num_str = match.group(1)
             try:
                 value = float(num_str)
-                if (100 <= value <= 10000 and 
-                    not (1900 <= value <= 2100) and 
-                    not (2400 <= value <= 2700) and
-                    value not in [60000, 70000, 80000, 90000]):  # Not meter readings
+
+                # Get context around the number (80 chars before and after for better context)
+                start = max(0, match.start() - 80)
+                end = min(len(text), match.end() + 80)
+                context = text[start:end].lower()
+
+                # More specific address filtering - only skip if DIRECTLY adjacent to address keywords
+                # Check if within 10 characters of address keywords
+                close_context = text[max(0, match.start() - 10):min(len(text), match.end() + 10)].lower()
+                address_keywords = ['ซอย', 'ถนน', 'อาคาร', 'ชั้น', 'premise', 'address',
+                                   'เลขที่', 'ห้อง', 'แขวง', 'เขต', 'ม.']
+                if any(kw in close_context for kw in address_keywords):
+                    print(f"  ✗ Skip {value} (near address keyword)")
+                    continue
+
+                # Skip if it looks like part of an address (number/number pattern)
+                if '/' in text[max(0, match.start() - 2):min(len(text), match.end() + 2)]:
+                    print(f"  ✗ Skip {value} (address format)")
+                    continue
+
+                # Skip meter readings (4-5 digits >= 1000)
+                if value >= 1000 and len(num_str) >= 4:
+                    print(f"  ✗ Skip {value} (meter reading)")
+                    continue
+
+                # Skip years
+                if (1900 <= value <= 2100) or (2400 <= value <= 2700):
+                    print(f"  ✗ Skip {value} (year)")
+                    continue
+
+                # Skip dates
+                if value <= 31:
+                    print(f"  ✗ Skip {value} (date)")
+                    continue
+
+                # Must be in realistic usage range
+                if 50 <= value <= 5000:
                     print(f"  ✓ Last resort found: {value} kWh")
                     return value
+
             except ValueError:
                 pass
         
         print("  ✗ No valid usage found")
         return None
-
-
-def detect_table_region(self, image: np.ndarray) -> Optional[np.ndarray]:
-    """Detect table region - DISABLED for pre-cropped images"""
-    # This method is now handled in preprocess_image
-    # Return None to use original image
-    return None
 
     def extract_bill_period(self, text: str, bill_format: str) -> Optional[Dict[str, int]]:
         """Extract billing period (month/year)"""
@@ -571,76 +926,100 @@ def detect_table_region(self, image: np.ndarray) -> Optional[np.ndarray]:
         
         return categorized
 
-    def process_bill(self, image_bytes: bytes) -> Dict:
-        """Main method to process electricity bill image"""
+    def process_bill(self, pdf_bytes: bytes) -> Dict:
+        """Main method to process electricity bill PDF using external extraction scripts"""
+        import tempfile
+
         try:
-            # Step 1: Preprocess image
-            print("Preprocessing image...")
-            preprocessed = self.preprocess_image(image_bytes)
-            
-            # Step 2: Extract text with confidence
-            print("Extracting text via OCR...")
-            cleaned_text, confidence = self.extract_text_with_confidence(preprocessed)
-            print(f"OCR Confidence: {confidence:.2f}%")
-            
-            # Step 3: Detect bill format
-            bill_format = self.detect_bill_format(cleaned_text)
-            print(f"Detected format: {bill_format.upper()}")
-            
-            # Step 4: Extract structured data
-            print("Extracting structured data...")
-            extracted_data = {
-                'bill_format': bill_format,
-                'ocr_confidence': confidence
-            }
-            
-            # Extract usage (primary method)
-            usage = self.extract_usage_amount(cleaned_text, bill_format)
-            if usage:
-                extracted_data['usage_kwh'] = usage
-                print(f"Found usage: {usage} kWh")
-            
-            # Extract billing period
-            period = self.extract_bill_period(cleaned_text, bill_format)
-            if period:
-                extracted_data.update(period)
-                print(f"Found period: {period['month']}/{period['year']}")
-            
-            # Extract amount
-            amount = self.extract_amount(cleaned_text, bill_format)
-            if amount:
-                extracted_data['total_amount'] = amount
-                print(f"Found amount: {amount} baht")
-            
-            # Fallback extraction if primary methods fail
-            if not usage:
-                print("Primary extraction failed, trying fallback method...")
-                fallback_data = self.fallback_number_extraction(cleaned_text)
-                
-                if fallback_data['usage_candidates']:
-                    # Take the most reasonable usage value
-                    usage_candidates = fallback_data['usage_candidates']
-                    extracted_data['usage_kwh'] = usage_candidates[0]  # Take first candidate
-                    extracted_data['fallback_candidates'] = fallback_data
-                    print(f"Fallback found usage candidates: {usage_candidates}")
-            
-            # Validation
-            if not extracted_data.get('usage_kwh'):
-                return {
-                    'success': False,
-                    'error': 'Could not extract electricity usage',
-                    'raw_text': cleaned_text,
-                    'extracted_data': extracted_data,
-                    'fallback_data': self.fallback_number_extraction(cleaned_text)
+            # Step 1: Save PDF to temporary file (required by external scripts)
+            print("=== COORDINATE-BASED EXTRACTION (Using External Scripts) ===")
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                tmp_file.write(pdf_bytes)
+                tmp_pdf_path = tmp_file.name
+
+            try:
+                # Step 2: Render PDF at 300 DPI to detect format
+                print("Detecting bill format...")
+                pil_image = self.render_pdf_at_high_dpi(pdf_bytes, dpi=300)
+                width, height = pil_image.size
+                aspect_ratio = height / width
+                bill_format = 'pea' if aspect_ratio > 1.3 else 'mea'
+                print(f"Detected format: {bill_format.upper()} (aspect ratio: {aspect_ratio:.2f})")
+
+                # Step 3: Use appropriate external extraction script
+                print(f"\nExtracting fields using {bill_format.upper()} extraction script...")
+                coords = self.crop_coords.get(bill_format, {})
+
+                if bill_format == 'mea':
+                    results = extract_mea(tmp_pdf_path, coords, dpi=300)
+                else:  # pea
+                    results = extract_pea(tmp_pdf_path, coords, dpi=300)
+
+                print(f"Extraction results: {results}")
+
+                # Step 4: Parse extracted data
+                extracted_data = {
+                    'bill_format': bill_format,
+                    'ocr_confidence': 95.0,
+                    'extraction_method': 'external_script'
                 }
-            
-            return {
-                'success': True,
-                'data': extracted_data,
-                'raw_text': cleaned_text,
-                'message': f"Successfully extracted {extracted_data['usage_kwh']} kWh ({bill_format.upper()} format)"
-            }
-            
+
+                # Parse usage (จำนวนหน่วย)
+                usage_text = results.get('จำนวนหน่วย', '')
+                usage_match = re.search(r'(\d+(?:\.\d+)?)', usage_text)
+                if usage_match:
+                    usage = float(usage_match.group(1))
+                    extracted_data['usage_kwh'] = usage
+                    print(f"✓ Found usage: {usage} kWh")
+
+                # Parse date
+                if bill_format == 'mea':
+                    date_text = results.get('วันที่จดเลขอ่าน', '')
+                else:
+                    date_text = results.get('วันที่อ่านหน่วย', '')
+
+                date_match = re.search(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', date_text)
+                if date_match:
+                    day = int(date_match.group(1))
+                    month = int(date_match.group(2))
+                    year = int(date_match.group(3))
+
+                    # Convert 2-digit year to 4-digit Buddhist year first
+                    if year < 100:
+                        # 2-digit year: assume Buddhist calendar (2500s)
+                        year += 2500  # 66 -> 2566
+
+                    # Convert Buddhist year to Gregorian
+                    if year > 2500:
+                        year -= 543  # 2566 -> 2023
+
+                    extracted_data['month'] = month
+                    extracted_data['year'] = year
+                    extracted_data['reading_date'] = date_text
+                    print(f"✓ Found date: {date_text} (parsed as {month:02d}/{year})")
+
+                # Validation
+                if not extracted_data.get('usage_kwh'):
+                    return {
+                        'success': False,
+                        'error': 'Could not extract electricity usage',
+                        'extracted_data': extracted_data,
+                        'raw_results': results
+                    }
+
+                return {
+                    'success': True,
+                    'data': extracted_data,
+                    'message': f"Successfully extracted {extracted_data['usage_kwh']} kWh ({bill_format.upper()} format)"
+                }
+
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(tmp_pdf_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete temp file: {e}")
+
         except Exception as e:
             logging.exception("OCR processing error")
             print(f"OCR processing error: {str(e)}")
@@ -875,23 +1254,154 @@ def process_image_ocr_simple(file, user_id):
         }
 
 def process_pdf_bill(file, user_id):
-    """Process PDF electricity bills"""
+    """Process PDF electricity bills using OCR - Convert PDF to images first"""
     try:
-        print("Starting PDF processing...")
-        
-        # For now, return a not implemented message
-        # You can implement PDF processing using libraries like PyPDF2 or pdfplumber
-        return {
-            'success': False,
-            'message': 'PDF processing not yet implemented. Please use image files (.jpg, .png) for now.'
-        }
-        
+        print("\n=== PDF BILL PROCESSING (OCR Method) ===")
+
+        # Save to temporary file
+        import tempfile
+        import fitz  # PyMuPDF - no external dependencies needed!
+
+        tmp_file_path = None
+
+        try:
+            # Save PDF to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                tmp_file_path = tmp_file.name
+                file.save(tmp_file_path)
+
+            print(f"Converting PDF to image for OCR processing...")
+
+            # Open PDF with PyMuPDF
+            pdf_document = fitz.open(tmp_file_path)
+
+            if pdf_document.page_count == 0:
+                return {
+                    'success': False,
+                    'message': 'PDF has no pages'
+                }
+
+            # Get first page (bills are typically single page)
+            first_page = pdf_document[0]
+
+            # Convert to high-resolution image (300 DPI)
+            # zoom = 300/72 = 4.167 (72 is default DPI)
+            zoom = 300 / 72
+            mat = fitz.Matrix(zoom, zoom)
+            pix = first_page.get_pixmap(matrix=mat)
+
+            print(f"Converted PDF to image ({pix.width}x{pix.height} pixels)")
+
+            # Close PDF
+            pdf_document.close()
+
+            # Read the original PDF bytes to pass to the processor
+            with open(tmp_file_path, 'rb') as f:
+                pdf_bytes = f.read()
+
+            # Use existing OCR processor with ORIGINAL PDF bytes (not PNG)
+            ocr_processor = ThaiElectricityBillOCR()
+            result = ocr_processor.process_bill(pdf_bytes)
+
+            if result['success']:
+                extracted_data = result['data']
+                usage_kwh = extracted_data.get('usage_kwh')
+
+                if usage_kwh:
+                    from datetime import datetime
+                    now = datetime.now()
+
+                    # Get the READING date from OCR
+                    bill_month = extracted_data.get('month', now.month)
+                    bill_year = extracted_data.get('year', now.year)
+
+                    print(f"\n=== Bill Date Processing ===")
+                    print(f"Reading date from bill: {bill_month:02d}/{bill_year}")
+
+                    # Calculate usage period (reading month - 1)
+                    bill_date_offset = int(os.getenv('BILL_DATE_OFFSET', '1'))  # Default: 1 month offset
+
+                    actual_month = bill_month - bill_date_offset
+                    actual_year = bill_year
+
+                    # Handle year boundary
+                    if actual_month < 1:
+                        actual_month = 12
+                        actual_year = bill_year - 1
+
+                    print(f"Bill reading date: {bill_month:02d}/{bill_year}")
+                    print(f"Adjusted usage period (offset -{bill_date_offset} month): {actual_month:02d}/{actual_year}")
+                    print(f"===========================\n")
+
+                    # Use TGO Thailand Grid Mix Electricity emission factor
+                    emission_factor = 0.4999  # kg CO2 per kWh
+                    co2_equivalent = usage_kwh * emission_factor
+
+                    emission_record = {
+                        'record_id': generate_record_id(),
+                        'user_id': user_id,
+                        'category': 'grid_electricity',
+                        'emission_type': 'grid_electricity',
+                        'amount': usage_kwh,
+                        'unit': 'kWh',
+                        'month': actual_month,
+                        'year': actual_year,
+                        'emission_factor': emission_factor,
+                        'co2_equivalent': co2_equivalent,
+                        'calculated_emission': co2_equivalent,
+                        'import_time': datetime.now(timezone.utc),
+                        'record_date': datetime(actual_year, actual_month, 1),
+                        'created_at': datetime.now(timezone.utc),
+                        'source': 'pdf_ocr',
+                        'extracted_text': result.get('raw_text', '')[:500],
+                        'ocr_confidence': extracted_data.get('ocr_confidence', 0),
+                        'bill_format': extracted_data.get('bill_format', 'unknown'),
+                        'bill_reading_date': f"{bill_month:02d}/{bill_year}",
+                        'usage_period': f"{actual_month:02d}/{actual_year}"
+                    }
+
+                    emission_records_collection.insert_one(emission_record)
+
+                    return {
+                        'success': True,
+                        'message': f'Successfully extracted {usage_kwh} kWh from PDF via OCR (Usage: {actual_month:02d}/{actual_year})',
+                        'usage_kwh': usage_kwh,
+                        'co2_equivalent': round(co2_equivalent, 2),
+                        'emission_factor': emission_factor,
+                        'record_id': emission_record['record_id'],
+                        'bill_format': extracted_data.get('bill_format'),
+                        'ocr_confidence': extracted_data.get('ocr_confidence'),
+                        'usage_period': f"{actual_month:02d}/{actual_year}",
+                        'extracted_data': {
+                            'usage_kwh': usage_kwh,
+                            'bill_format': extracted_data.get('bill_format')
+                        }
+                    }
+
+            # OCR failed to extract data
+            return {
+                'success': False,
+                'message': result.get('message', 'Could not extract bill data from PDF')
+            }
+
+        finally:
+            # Clean up temp PDF file
+            if tmp_file_path and os.path.exists(tmp_file_path):
+                try:
+                    os.unlink(tmp_file_path)
+                    print(f"Cleaned up temporary PDF file")
+                except Exception as e:
+                    print(f"Warning: Could not delete temp PDF file: {e}")
+
     except Exception as e:
-        print(f"PDF processing error: {str(e)}")
+        print(f"PDF OCR processing error: {str(e)}")
+        logging.exception("PDF OCR processing failed")
         return {
             'success': False,
             'message': f'PDF processing failed: {str(e)}'
         }
+
+# PDF text extraction functions removed - now using OCR for all PDFs
 
 # JWT decorator for protected routes
 def token_required(f):
@@ -2303,36 +2813,41 @@ def preview_report_data(current_user):
             category = emission.get('category', 'other')
             emissions_by_category[category] = emissions_by_category.get(category, 0) + emission.get('co2_equivalent', 0)
         
-        # Group by scope
-        emissions_by_scope = {'Scope 1': 0, 'Scope 2': 0, 'Scope 3': 0}
+        # Group by scope (Scope 1 and 2 only - Scope 3 not used)
+        emissions_by_scope = {'Scope 1': 0, 'Scope 2': 0}
 
         def get_emission_scope(category):
             """Determine scope based on database lookup or category name"""
             # First, try to find the scope from the emission_factors database
             emission_factor = emission_factors_collection.find_one({'name': category})
             if emission_factor and 'scope' in emission_factor:
-                return emission_factor['scope']
+                scope_value = emission_factor['scope']
+                # Map Scope 3 to Scope 1 if it exists in database
+                if scope_value == 3:
+                    return 1
+                return scope_value
 
             # Fallback to keyword matching
             category_lower = category.lower()
 
             # Scope 2: Electricity (all forms)
-            if any(keyword in category_lower for keyword in ['electricity', 'grid mix']):
+            if any(keyword in category_lower for keyword in ['electricity', 'grid mix', 'electric', 'grid', 'power', 'energy']):
                 return 2
 
-            # Scope 1: All combustion and fugitive emissions
+            # Scope 1: All combustion, fugitive emissions, waste, transport, and other direct emissions
             scope1_keywords = ['diesel', 'gasoline', 'petrol', 'natural gas', 'coal',
                               'fuel oil', 'kerosene', 'lpg', 'cng', 'biogas', 'wood',
-                              'bagasse', 'palm', 'corn', 'r-', 'refrigerant']
+                              'bagasse', 'palm', 'corn', 'r-', 'refrigerant', 'fugitive',
+                              'hfc', 'pfc', 'sf6', 'nf3', 'waste', 'transport',
+                              'fuel', 'mobile', 'vehicle', 'combustion', 'stationary',
+                              'biomass', 'anthracite', 'bituminous', 'lignite',
+                              'heavy fuel oil', 'gas oil', 'equipment', 'machinery',
+                              'agriculture', 'forestry', 'construction']
             if any(keyword in category_lower for keyword in scope1_keywords):
                 return 1
 
-            # Scope 3: Waste, transport, etc.
-            if any(keyword in category_lower for keyword in ['waste', 'transport']):
-                return 3
-
-            # Default to Scope 3 for unknown categories
-            return 3
+            # Default to Scope 1 for unknown categories
+            return 1
 
         for emission in emissions:
             category = emission.get('category', 'other')

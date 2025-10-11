@@ -30,9 +30,6 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
   // Preview data
   Map<String, dynamic>? _previewData;
   bool _isLoadingPreview = false;
-  
-  // Generated reports
-  List<Map<String, dynamic>> _generatedReports = [];
 
   @override
   void initState() {
@@ -40,7 +37,6 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
     _loadAvailableFormats();
     _loadAvailableFileTypes();
     _loadAvailableLanguages();
-    _loadGeneratedReports();
   }
 
   Future<void> _loadAvailableFormats() async {
@@ -208,18 +204,6 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
     }
   }
 
-  Future<void> _loadGeneratedReports() async {
-    try {
-      final response = await _apiService.get('/reports');
-      if (response['reports'] != null) {
-        setState(() {
-          _generatedReports = List<Map<String, dynamic>>.from(response['reports']);
-        });
-      }
-    } catch (e) {
-      print('Failed to load reports: $e');
-    }
-  }
 
   Future<void> _previewReportData() async {
     setState(() {
@@ -276,7 +260,6 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
       
       if (response['success'] == true) {
         _showSuccessSnackBar('Report generated successfully!');
-        _loadGeneratedReports(); // Refresh the reports list
 
         // Directly show download dialog
         _downloadReport(response['report_id']);
@@ -994,46 +977,6 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
               ),
             ],
             
-            const SizedBox(height: 16),
-            
-            // Generated Reports List
-            if (_generatedReports.isNotEmpty) ...[
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Generated Reports',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      ..._generatedReports.take(5).map((report) {
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            leading: const Icon(Icons.description, color: Constants.primaryColor),
-                            title: Text(report['report_id'] ?? 'Unknown Report'),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Format: ${report['report_format'] ?? 'Unknown'}'),
-                                Text('Created: ${report['generated_at'] ?? report['create_date'] ?? 'Unknown'}'),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ],
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),

@@ -529,7 +529,6 @@ class _AddEmissionScreenState extends State<AddEmissionScreen> {
               const SizedBox(height: 8),
               Text('• ${_localization.scope1}'),
               Text('• ${_localization.scope2}'),
-              Text('• ${_localization.scope3}'),
               const SizedBox(height: 12),
               Text(
                 _localization.allFactorsDescription,

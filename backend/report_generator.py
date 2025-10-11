@@ -1,9 +1,17 @@
 """
 New AI-Powered Report Generation System for Carbon Accounting
 Supports ISO 14064, CFO, and GHG Protocol standards with AI-generated preliminary descriptions
+
+VERSION: 2.0 - COMPREHENSIVE AI REPORT WITH 8 SECTIONS
+Last Updated: 2025-10-08
 """
 
 import os
+
+# Print version on module load for debugging
+print("="*80)
+print("LOADING REPORT GENERATOR VERSION 2.0 - COMPREHENSIVE AI REPORT")
+print("="*80)
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
@@ -76,15 +84,22 @@ class CarbonReportGenerator:
             Dictionary with report generation results
         """
         try:
-            print(f"Generating {report_format} report for user {user_id}")
-            
+            print(f"\n{'='*80}")
+            print(f"REPORT GENERATOR V2.0 - GENERATING COMPREHENSIVE AI REPORT")
+            print(f"{'='*80}")
+            print(f"Format: {report_format}, Language: {language}, File Type: {file_type}")
+            print(f"User: {user_id}, Period: {start_date} to {end_date}")
+
             # Step 1: Collect and process emission data
             report_data = self._collect_emission_data(user_id, start_date, end_date)
-            
+            print(f"✓ Data collected: {report_data['record_count']} records, {report_data['total_emissions']:.2f} kg CO2e")
+
             # Step 2: Generate AI-powered preliminary descriptions
             ai_content = {}
             if include_ai_insights:
+                print(f"✓ Generating AI content with 8 comprehensive sections...")
                 ai_content = self._generate_ai_content(report_data, report_format, language)
+                print(f"✓ AI sections generated: {list(ai_content.keys())}")
             
             # Step 3: Create structured report content
             report_content = self._create_report_structure(report_data, ai_content, report_format, language)
@@ -155,6 +170,16 @@ class CarbonReportGenerator:
         # Group by GHG Protocol scopes (Scope 1 and 2 only as per project requirement)
         emissions_by_scope = {'Scope 1': 0, 'Scope 2': 0}
 
+        # Define Scope 1 keywords (matching dashboard logic)
+        scope1_keywords = [
+            'fuel', 'gasoline', 'diesel', 'natural gas', 'lpg', 'coal', 'kerosene',
+            'mobile', 'vehicle', 'transport', 'combustion', 'stationary', 'biomass',
+            'bagasse', 'biogas', 'wood', 'anthracite', 'bituminous', 'lignite',
+            'refrigerant', 'fugitive', 'cng', 'heavy fuel oil', 'gas oil',
+            'equipment', 'machinery', 'agriculture', 'forestry', 'construction',
+            'r-', 'hfc', 'pfc', 'sf6', 'nf3'  # Refrigerant codes
+        ]
+
         for emission in emissions:
             category = emission.get('category', 'other').lower()
             co2_value = float(emission.get('co2_equivalent', 0))
@@ -163,7 +188,10 @@ class CarbonReportGenerator:
             # Scope 2: Electricity and purchased energy
             if any(keyword in category for keyword in ['electric', 'grid', 'power', 'energy']):
                 emissions_by_scope['Scope 2'] += co2_value
-            # Scope 1: Everything else (direct emissions - fuels, refrigerants, etc.)
+            # Scope 1: Direct emissions (fuels, refrigerants, combustion, etc.)
+            elif any(keyword in category for keyword in scope1_keywords):
+                emissions_by_scope['Scope 1'] += co2_value
+            # Default: Everything else goes to Scope 1
             else:
                 emissions_by_scope['Scope 1'] += co2_value
 
@@ -216,69 +244,100 @@ class CarbonReportGenerator:
         return list(monthly_breakdown.values())
 
     def _generate_ai_content(self, report_data: Dict, report_format: str, language: str = 'EN') -> Dict:
-        """Generate AI-powered preliminary descriptions and insights"""
+        """Generate AI-powered preliminary descriptions and insights for comprehensive report"""
         try:
             if not openai.api_key:
                 return self._get_fallback_content(report_data, report_format, language)
-            
+
             ai_content = {}
-            
-            # Generate executive summary
+
+            # 1. Executive Summary (สรุปผู้บริหาร)
             ai_content['executive_summary'] = self._generate_executive_summary(report_data, report_format, language)
-            
-            # Generate key findings
-            ai_content['key_findings'] = self._generate_key_findings(report_data, language)
-            
-            # Generate recommendations
-            ai_content['recommendations'] = self._generate_recommendations(report_data, language)
-            
-            # Generate compliance notes
-            ai_content['compliance_notes'] = self._generate_compliance_notes(report_format, language)
-            
-            # Generate trend analysis
+
+            # 2. Trend Analysis (การวิเคราะห์แนวโน้ม) - FIXED: Now handles 2024 data correctly
             ai_content['trend_analysis'] = self._generate_trend_analysis(report_data, language)
-            
+
+            # 3. Emissions Breakdown (การแบ่งประเภทการปล่อยก๊าซ)
+            ai_content['emissions_breakdown'] = self._generate_emissions_breakdown(report_data, language)
+
+            # 4. Methodology (วิธีการคำนวณ) - Enhanced with AI
+            ai_content['methodology'] = self._generate_methodology(report_data, report_format, language)
+
+            # 5. Data Quality Statement (คำชี้แจงคุณภาพข้อมูล)
+            ai_content['data_quality'] = self._generate_data_quality(report_data, language)
+
+            # 7. Recommendations (ข้อเสนอแนะ)
+            ai_content['recommendations'] = self._generate_recommendations(report_data, language)
+
+            # 8. Conclusion (สรุป)
+            ai_content['conclusion'] = self._generate_conclusion(report_data, language)
+
+            # Legacy support - key findings (backward compatibility)
+            ai_content['key_findings'] = self._generate_key_findings(report_data, language)
+
             return ai_content
-            
+
         except Exception as e:
             print(f"AI content generation error: {str(e)}")
             return self._get_fallback_content(report_data, report_format, language)
 
     def _generate_executive_summary(self, report_data: Dict, report_format: str, language: str = 'EN') -> str:
-        """Generate AI-powered executive summary"""
+        """Generate AI-powered executive summary with professional tone"""
         try:
-            language_instruction = "Write in Thai language" if language == 'TH' else "Write in English"
-            
+            language_instruction = "Write in Thai language (ภาษาไทย)" if language == 'TH' else "Write in professional English"
+
+            # Calculate key metrics
+            top_categories = dict(sorted(report_data['emissions_by_category'].items(), key=lambda x: x[1], reverse=True)[:3])
+            avg_monthly = report_data['total_emissions'] / max(len(report_data.get('monthly_data', [])), 1)
+
             prompt = f"""
-            Generate a professional executive summary for a {report_format} carbon emissions report:
-            
-            Organization: {report_data['organization']}
-            Total Emissions: {report_data['total_emissions']:.2f} kg CO2e
-            Period: {report_data['period_start'].strftime('%B %Y')} to {report_data['period_end'].strftime('%B %Y')}
-            Top Categories: {dict(sorted(report_data['emissions_by_category'].items(), key=lambda x: x[1], reverse=True)[:3])}
-            Scope Breakdown: {report_data['emissions_by_scope']}
-            
-            Requirements:
+            Generate a comprehensive executive summary for a {report_format} Protocol carbon emissions report:
+
+            ORGANIZATION DATA:
+            - Organization: {report_data['organization']}
+            - Reporting Period: {report_data['period_start'].strftime('%B %Y')} to {report_data['period_end'].strftime('%B %Y')}
+
+            EMISSION METRICS:
+            - Total Emissions: {report_data['total_emissions']:.2f} kg CO2e
+            - Average Monthly: {avg_monthly:.2f} kg CO2e
+            - Number of Records: {report_data['record_count']}
+
+            BREAKDOWN:
+            - Top Emission Sources: {top_categories}
+            - Scope Distribution: {report_data['emissions_by_scope']}
+
+            REQUIREMENTS:
             - {language_instruction}
-            - Professional tone suitable for {report_format} standards
-            - 150-200 words
-            - Include key metrics and business implications
-            - Focus on compliance with {report_format} requirements
-            - Provide actionable insights
+            - Executive-level professional tone suitable for board presentation
+            - 200-250 words comprehensive summary
+            - Include the following elements:
+              1. Overview of reporting scope and period
+              2. Total emissions with context
+              3. Key emission sources and their significance
+              4. Scope breakdown implications
+              5. Compliance status with {report_format} standards
+              6. Strategic business implications
+              7. Summary of recommended actions
+            - Use clear, confident language
+            - Emphasize transparency and accountability
+            - Conclude with forward-looking statement
             """
-            
+
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,
+                max_tokens=400,
                 temperature=0.7
             )
 
-            # Clean up multiple spaces and normalize whitespace
+            # Clean up and return
+            import re
             content = response.choices[0].message.content.strip()
-            return ' '.join(content.split())
-            
+            content = re.sub(r'\s+', ' ', content)  # Remove multiple consecutive spaces
+            return content
+
         except Exception as e:
+            print(f"Executive summary generation error: {str(e)}")
             return self._get_fallback_executive_summary(report_data, report_format, language)
 
     def _generate_key_findings(self, report_data: Dict, language: str = 'EN') -> List[str]:
@@ -319,160 +378,382 @@ class CarbonReportGenerator:
             return self._get_fallback_key_findings(report_data, language)
 
     def _generate_recommendations(self, report_data: Dict, language: str = 'EN') -> List[str]:
-        """Generate AI-powered recommendations"""
+        """Generate AI-powered actionable recommendations"""
         try:
-            language_instruction = "Write in Thai language" if language == 'TH' else "Write in English"
+            language_instruction = "Write in Thai language (ภาษาไทย)" if language == 'TH' else "Write in professional English"
             top_category = max(report_data['emissions_by_category'], key=report_data['emissions_by_category'].get) \
                           if report_data['emissions_by_category'] else 'unknown'
-            
+
+            # Calculate scope percentages
+            scope1_pct = (report_data['emissions_by_scope'].get('Scope 1', 0) / report_data['total_emissions'] * 100) if report_data['total_emissions'] > 0 else 0
+            scope2_pct = (report_data['emissions_by_scope'].get('Scope 2', 0) / report_data['total_emissions'] * 100) if report_data['total_emissions'] > 0 else 0
+
             prompt = f"""
-            Generate 5-6 specific recommendations to reduce carbon emissions:
-            
-            Total Emissions: {report_data['total_emissions']:.2f} kg CO2e
-            Highest Source: {top_category}
-            All Categories: {report_data['emissions_by_category']}
-            
-            Requirements:
+            Generate 6-8 specific, actionable recommendations for carbon emission reduction:
+
+            EMISSION PROFILE:
+            - Total Emissions: {report_data['total_emissions']:.2f} kg CO2e
+            - Primary Source: {top_category}
+            - Scope 1 (Direct): {report_data['emissions_by_scope'].get('Scope 1', 0):.2f} kg CO2e ({scope1_pct:.1f}%)
+            - Scope 2 (Energy): {report_data['emissions_by_scope'].get('Scope 2', 0):.2f} kg CO2e ({scope2_pct:.1f}%)
+            - All Categories: {report_data['emissions_by_category']}
+
+            REQUIREMENTS:
             - {language_instruction}
-            - Specific and actionable recommendations
-            - Prioritized by impact potential
-            - Cost-effective where possible
-            - Include estimated reduction percentages
+            - Professional and strategic tone
+            - Each recommendation must be:
+              * Specific and actionable (not generic advice)
+              * Tied to actual emission sources in the data
+              * Include estimated reduction potential (e.g., "10-15% reduction")
+              * Consider cost-effectiveness and feasibility
+              * Prioritized by impact (highest impact first)
+            - Cover both immediate quick wins and long-term strategic initiatives
+            - Include recommendations for:
+              1. Top emission source ({top_category})
+              2. Energy efficiency (if Scope 2 is significant)
+              3. Operational improvements
+              4. Technology upgrades
+              5. Monitoring and verification systems
+              6. Employee engagement programs
+            - Format as clear bullet points
             """
-            
+
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=500,
+                max_tokens=600,
                 temperature=0.7
             )
-            
+
             recommendations_text = response.choices[0].message.content.strip()
-            # Clean up multiple spaces and newlines, filter empty lines
-            lines = [r.strip('• -').strip() for r in recommendations_text.split('\n')]
+            # Clean up and parse recommendations
+            lines = [r.strip('• -123456789.').strip() for r in recommendations_text.split('\n')]
             # Remove empty strings and normalize whitespace
-            return [' '.join(line.split()) for line in lines if line.strip()]
-            
+            return [' '.join(line.split()) for line in lines if line.strip() and len(line.strip()) > 10]
+
         except Exception as e:
+            print(f"Recommendations generation error: {str(e)}")
             return self._get_fallback_recommendations(report_data, language)
 
     def _generate_trend_analysis(self, report_data: Dict, language: str = 'EN') -> str:
-        """Generate AI-powered trend analysis"""
+        """
+        Generate AI-powered trend analysis
+        FIXED: Properly handles year-over-year comparisons including 2024 data
+        """
         try:
-            language_instruction = "Write in Thai language" if language == 'TH' else "Write in English"
-            monthly_totals = [month['total'] for month in report_data['monthly_data']]
-            
+            language_instruction = "Write in Thai language (ภาษาไทย)" if language == 'TH' else "Write in professional English"
+
+            # Extract monthly data with proper validation
+            monthly_data = report_data.get('monthly_data', [])
+            if not monthly_data:
+                return self._get_fallback_trend_analysis(report_data, language)
+
+            # Calculate comprehensive trend metrics
+            monthly_totals = [month.get('total', 0) for month in monthly_data]
+            total_emissions = sum(monthly_totals)
+            avg_monthly = total_emissions / len(monthly_totals) if monthly_totals else 0
+            max_month = max(monthly_data, key=lambda x: x.get('total', 0)) if monthly_data else {}
+            min_month = min(monthly_data, key=lambda x: x.get('total', 0)) if monthly_data else {}
+
+            # Year-over-year comparison (FIXED: Handles current year data)
+            yearly_totals = {}
+            for month in monthly_data:
+                month_name = month.get('month', '')
+                if month_name:
+                    year = month_name.split()[-1]  # Extract year from "Month YYYY"
+                    yearly_totals[year] = yearly_totals.get(year, 0) + month.get('total', 0)
+
+            # Fetch previous year data for comparison
+            period_start = report_data['period_start']
+            period_end = report_data['period_end']
+            current_year = period_start.year
+            prev_year_start = period_start.replace(year=current_year - 1)
+            prev_year_end = period_end.replace(year=current_year - 1)
+
+            try:
+                prev_year_emissions = list(emission_records_collection.find({
+                    'record_date': {'$gte': prev_year_start, '$lte': prev_year_end}
+                }))
+                prev_year_total = sum(float(e.get('co2_equivalent', 0)) for e in prev_year_emissions)
+                if prev_year_total > 0:
+                    yearly_totals[str(current_year - 1)] = prev_year_total
+            except:
+                prev_year_total = 0
+
+            # Calculate trend
             if len(monthly_totals) > 1:
-                trend = "increasing" if monthly_totals[-1] > monthly_totals[0] else "decreasing"
-                change = ((monthly_totals[-1] - monthly_totals[0]) / monthly_totals[0] * 100) if monthly_totals[0] > 0 else 0
+                trend = "increasing" if monthly_totals[-1] > monthly_totals[0] else "decreasing" if monthly_totals[-1] < monthly_totals[0] else "stable"
+                change_pct = ((monthly_totals[-1] - monthly_totals[0]) / monthly_totals[0] * 100) if monthly_totals[0] > 0 else 0
             else:
                 trend = "stable"
-                change = 0
-            
+                change_pct = 0
+
+            # Calculate year-over-year change
+            yoy_comparison = ""
+            if prev_year_total > 0:
+                yoy_change = ((total_emissions - prev_year_total) / prev_year_total) * 100
+                yoy_comparison = f"Year-over-year change: {yoy_change:+.1f}% (Current: {total_emissions:.1f} vs Previous: {prev_year_total:.1f} kg CO2e)"
+
+            # Build comprehensive prompt
             prompt = f"""
-            Analyze emission trends over the reporting period:
-            
-            Monthly Data: {[f"{m['month']}: {m['total']:.1f}" for m in report_data['monthly_data']]}
-            Overall Trend: {trend}
-            Change: {change:.1f}%
-            
-            Requirements:
+            Analyze greenhouse gas emission trends for this organization's carbon footprint:
+
+            EMISSION DATA:
+            - Total Emissions: {total_emissions:.2f} kg CO2e
+            - Average Monthly: {avg_monthly:.2f} kg CO2e
+            - Peak Month: {max_month.get('month', 'N/A')} ({max_month.get('total', 0):.2f} kg CO2e)
+            - Lowest Month: {min_month.get('month', 'N/A')} ({min_month.get('total', 0):.2f} kg CO2e)
+            - Monthly Data: {[f"{m.get('month', 'N/A')}: {m.get('total', 0):.1f} kg CO2e" for m in monthly_data]}
+            - Year Totals by Year: {yearly_totals}
+            - {yoy_comparison}
+            - Overall Trend: {trend}
+            - Period Change: {change_pct:+.1f}%
+
+            REQUIREMENTS:
             - {language_instruction}
-            - Provide 100-150 word analysis covering:
-              * Trend patterns and seasonality
-              * Possible reasons for changes
-              * Implications for future planning
-              * Recommendations for trend improvement
+            - Professional tone suitable for executive and stakeholder review
+            - 200-250 words comprehensive analysis
+            - Include the following sections:
+              1. Year-over-year comparison (compare {current_year} to {current_year-1} if data available)
+              2. Monthly trend patterns and seasonality analysis
+              3. Peak and low emission periods with possible explanations
+              4. Business implications and operational insights
+              5. Forward-looking recommendations for emission management
+            - Use specific numbers and percentages from the data
+            - Provide actionable insights for carbon reduction strategy
+            - If comparing 2024 to 2025 data, explicitly mention both years
             """
-            
+
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=250,
+                max_tokens=400,
                 temperature=0.6
             )
 
-            # Clean up multiple spaces and normalize whitespace
+            # Clean up and return
+            import re
             content = response.choices[0].message.content.strip()
-            return ' '.join(content.split())
-            
+            content = re.sub(r'\s+', ' ', content)  # Remove multiple consecutive spaces
+            return content
+
         except Exception as e:
+            print(f"Trend analysis generation error: {str(e)}")
             return self._get_fallback_trend_analysis(report_data, language)
 
-    def _generate_compliance_notes(self, report_format: str, language: str = 'EN') -> str:
-        """Generate format-specific compliance notes"""
-        if language == 'TH':
-            compliance_notes = {
-                'ISO': """
-                รายงานนี้เป็นไปตามมาตรฐาน ISO 14064-1:2018 สำหรับการวัดและรายงานก๊าซเรือนกระจก
-                ค่าสัมประสิทธิ์การปล่อยทั้งหมดมาจากแนวทาง IPCC และหน่วยงานที่ได้รับการยอมรับ
-                ขั้นตอนการเก็บรวบรวมข้อมูลและการตรวจสอบเป็นไปตามข้อกำหนด ISO เพื่อความถูกต้องและครบถ้วน
-                ขอบเขตองค์กรถูกกำหนดโดยใช้แนวทางการควบคุมการดำเนินงาน
-                """,
-                'CFO': """
-                รายงานนี้ให้การบัญชีคาร์บอนที่เน้นด้านการเงินเหมาะสำหรับการทบทวนของผู้บริหาร
-                ต้นทุนการปล่อยและผลกระทบของภาษีคาร์บอนที่อาจเกิดขึ้นถูกรวมเข้าในการวิเคราะห์
-                การนำเสนอข้อมูลเป็นไปตามมาตรฐานการรายงานขององค์กรสำหรับการสื่อสารระดับคณะกรรมการ
-                ความเสี่ยงและโอกาสทางการเงินที่เกี่ยวข้องกับการปล่อยคาร์บอนได้รับการเน้นย้ำ
-                """,
-                'GHG': """
-                รายงานนี้เป็นไปตามมาตรฐาน GHG Protocol Corporate Accounting and Reporting Standard
-                การปล่อยก๊าซเรือนกระจกถูกจำแนกเป็น Scope 1, 2, และ 3 ตามที่กำหนดใน GHG Protocol
-                วิธีการคำนวณเป็นไปตามแนวทาง GHG Protocol สำหรับการจัดทำรายการขององค์กร
-                การจัดการคุณภาพข้อมูลและความไม่แน่นอนสอดคล้องกับข้อกำหนดของ GHG Protocol
-                """
-            }
-        else:
-            compliance_notes = {
-                'ISO': """
-                This report complies with ISO 14064-1:2018 standards for greenhouse gas quantification and reporting.
-                All emission factors are sourced from IPCC guidelines and recognized authorities.
-                Data collection and verification procedures follow ISO requirements for accuracy and completeness.
-                Organizational boundaries are defined using the operational control approach.
-                """,
-                'CFO': """
-                This report provides financial-focused carbon accounting suitable for executive review.
-                Emission costs and potential carbon tax implications are integrated into the analysis.
-                Data presentation follows corporate reporting standards for board-level communication.
-                Financial risks and opportunities related to carbon emissions are highlighted.
-                """,
-                'GHG': """
-                This report complies with the GHG Protocol Corporate Accounting and Reporting Standard.
-                Emissions are categorized into Scope 1, 2, and 3 as defined by the GHG Protocol.
-                Calculation methodologies follow GHG Protocol guidance for corporate inventories.
-                Data quality and uncertainty management align with GHG Protocol requirements.
-                """
-            }
-        
-        default_text = "หลักการบัญชีคาร์บอนมาตรฐานถูกนำมาใช้" if language == 'TH' else "Standard carbon accounting principles applied."
-        # Clean up multiple spaces and newlines from the compliance notes
-        text = compliance_notes.get(report_format, default_text)
-        return ' '.join(text.split())
+    def _generate_emissions_breakdown(self, report_data: Dict, language: str = 'EN') -> str:
+        """Generate AI-powered emissions breakdown analysis"""
+        try:
+            language_instruction = "Write in Thai language (ภาษาไทย)" if language == 'TH' else "Write in professional English"
+
+            # Prepare category and scope data
+            categories_sorted = sorted(report_data['emissions_by_category'].items(), key=lambda x: x[1], reverse=True)
+            total_emissions = report_data['total_emissions']
+
+            prompt = f"""
+            Provide a detailed breakdown analysis of greenhouse gas emissions by source and scope:
+
+            EMISSIONS BY CATEGORY (Top to Bottom):
+            {chr(10).join([f"- {cat}: {val:.2f} kg CO2e ({(val/total_emissions*100):.1f}%)" for cat, val in categories_sorted if val > 0])}
+
+            EMISSIONS BY SCOPE:
+            - Scope 1 (Direct): {report_data['emissions_by_scope'].get('Scope 1', 0):.2f} kg CO2e ({(report_data['emissions_by_scope'].get('Scope 1', 0)/total_emissions*100):.1f}%)
+            - Scope 2 (Indirect Energy): {report_data['emissions_by_scope'].get('Scope 2', 0):.2f} kg CO2e ({(report_data['emissions_by_scope'].get('Scope 2', 0)/total_emissions*100):.1f}%)
+
+            Total: {total_emissions:.2f} kg CO2e
+
+            REQUIREMENTS:
+            - {language_instruction}
+            - Professional and analytical tone
+            - 150-200 words
+            - Explain the significance of each major emission source
+            - Highlight scope distribution and its implications
+            - Identify which categories are most material to the organization
+            - Provide context for why certain sources contribute more than others
+            """
+
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=350,
+                temperature=0.6
+            )
+
+            import re
+            content = response.choices[0].message.content.strip()
+            content = re.sub(r'\s+', ' ', content)  # Remove multiple consecutive spaces
+            return content
+
+        except Exception as e:
+            print(f"Emissions breakdown generation error: {str(e)}")
+            return self._get_fallback_emissions_breakdown(report_data, language)
+
+    def _generate_methodology(self, report_data: Dict, report_format: str, language: str = 'EN') -> str:
+        """Generate AI-enhanced methodology description"""
+        try:
+            language_instruction = "Write in Thai language (ภาษาไทย)" if language == 'TH' else "Write in professional English"
+
+            prompt = f"""
+            Describe the calculation methodology for this {report_format} carbon emissions report:
+
+            REPORT DETAILS:
+            - Standard: {report_format} Protocol
+            - Total Records Analyzed: {report_data['record_count']}
+            - Period: {report_data['period_start'].strftime('%B %Y')} to {report_data['period_end'].strftime('%B %Y')}
+            - Scopes Covered: Scope 1 (Direct) and Scope 2 (Indirect Energy)
+
+            REQUIREMENTS:
+            - {language_instruction}
+            - Professional and technical tone
+            - 200-250 words comprehensive description
+            - Include the following:
+              1. Calculation approach and formulas used (Activity Data × Emission Factor = CO2 Equivalent)
+              2. Emission factor sources (TGO - Thailand Greenhouse Gas Management Organization, IPCC guidelines)
+              3. Data collection methods and frequency
+              4. Organizational boundary approach (operational control)
+              5. Scope definitions specific to {report_format}
+              6. Quality assurance procedures
+              7. Assumptions and limitations
+            - Explain how emissions are categorized by scope
+            - Reference specific standards and protocols followed
+            """
+
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=400,
+                temperature=0.6
+            )
+
+            import re
+            content = response.choices[0].message.content.strip()
+            content = re.sub(r'\s+', ' ', content)  # Remove multiple consecutive spaces
+            return content
+
+        except Exception as e:
+            print(f"Methodology generation error: {str(e)}")
+            return self._get_methodology_text(report_format, language)
+
+    def _generate_data_quality(self, report_data: Dict, language: str = 'EN') -> str:
+        """Generate data quality statement"""
+        try:
+            language_instruction = "Write in Thai language (ภาษาไทย)" if language == 'TH' else "Write in professional English"
+
+            completeness = (report_data['record_count'] / max(report_data['record_count'], 1)) * 100  # Simplified metric
+
+            prompt = f"""
+            Provide a data quality statement for this carbon emissions report:
+
+            DATA METRICS:
+            - Total Records: {report_data['record_count']}
+            - Reporting Period: {report_data['period_start'].strftime('%B %Y')} to {report_data['period_end'].strftime('%B %Y')}
+            - Categories Covered: {len(report_data['emissions_by_category'])}
+            - Data Completeness: High (all emission sources tracked)
+
+            REQUIREMENTS:
+            - {language_instruction}
+            - Professional and transparent tone
+            - 150-200 words
+            - Address the following:
+              1. Data completeness and coverage
+              2. Data accuracy and confidence levels
+              3. Primary data vs. estimated data
+              4. Known gaps or uncertainties
+              5. Verification and validation procedures
+              6. Data management systems used
+              7. Recommendations for data quality improvement
+            - Be honest about limitations while highlighting strengths
+            - Provide assurance appropriate for stakeholder confidence
+            """
+
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=350,
+                temperature=0.6
+            )
+
+            import re
+            content = response.choices[0].message.content.strip()
+            content = re.sub(r'\s+', ' ', content)  # Remove multiple consecutive spaces
+            return content
+
+        except Exception as e:
+            print(f"Data quality generation error: {str(e)}")
+            return self._get_fallback_data_quality(language)
+
+    def _generate_conclusion(self, report_data: Dict, language: str = 'EN') -> str:
+        """Generate comprehensive conclusion"""
+        try:
+            language_instruction = "Write in Thai language (ภาษาไทย)" if language == 'TH' else "Write in professional English"
+
+            # Calculate some key metrics for conclusion
+            avg_monthly = report_data['total_emissions'] / max(len(report_data['monthly_data']), 1)
+            top_category = max(report_data['emissions_by_category'], key=report_data['emissions_by_category'].get) if report_data['emissions_by_category'] else 'unknown'
+
+            prompt = f"""
+            Write a comprehensive conclusion for this carbon emissions report:
+
+            KEY METRICS:
+            - Total Emissions: {report_data['total_emissions']:.2f} kg CO2e
+            - Average Monthly: {avg_monthly:.2f} kg CO2e
+            - Primary Source: {top_category}
+            - Organization: {report_data['organization']}
+
+            REQUIREMENTS:
+            - {language_instruction}
+            - Professional and forward-looking tone
+            - 150-200 words
+            - Include the following:
+              1. Overall assessment of emission performance
+              2. Progress toward sustainability goals
+              3. Next steps and priorities
+              4. Commitment to continuous improvement
+              5. Call to action for stakeholders
+            - Balance honesty with optimism
+            - Emphasize accountability and transparency
+            - End with a strong commitment statement
+            """
+
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=350,
+                temperature=0.7
+            )
+
+            import re
+            content = response.choices[0].message.content.strip()
+            content = re.sub(r'\s+', ' ', content)  # Remove multiple consecutive spaces
+            return content
+
+        except Exception as e:
+            print(f"Conclusion generation error: {str(e)}")
+            return self._get_fallback_conclusion(report_data, language)
 
     def _get_fallback_content(self, report_data: Dict, report_format: str, language: str = 'EN') -> Dict:
         """Fallback content when AI is not available"""
         top_category = max(report_data['emissions_by_category'], key=report_data['emissions_by_category'].get) \
                       if report_data['emissions_by_category'] else 'unknown'
-        
+
         return {
             'executive_summary': self._get_fallback_executive_summary(report_data, report_format, language),
             'key_findings': self._get_fallback_key_findings(report_data, language),
             'recommendations': self._get_fallback_recommendations(report_data, language),
-            'compliance_notes': self._generate_compliance_notes(report_format, language),
-            'trend_analysis': self._get_fallback_trend_analysis(report_data, language)
+            'trend_analysis': self._get_fallback_trend_analysis(report_data, language),
+            'emissions_breakdown': self._get_fallback_emissions_breakdown(report_data, language),
+            'methodology': self._get_methodology_text(report_format, language),
+            'data_quality': self._get_fallback_data_quality(language),
+            'conclusion': self._get_fallback_conclusion(report_data, language)
         }
 
     def _get_fallback_executive_summary(self, report_data: Dict, report_format: str, language: str = 'EN') -> str:
         """Fallback executive summary"""
         if language == 'TH':
-            text = f"""
-            รายงานการปล่อยก๊าซเรือนกระจก {report_format} ฉบับนี้นำเสนอการวิเคราะห์ที่ครอบคลุมเกี่ยวกับการปล่อยก๊าซเรือนกระจก
-            ของ {report_data['organization']} ในช่วงระยะเวลาตั้งแต่ {report_data['period_start'].strftime('%B %Y')}
-            ถึง {report_data['period_end'].strftime('%B %Y')} การปล่อยก๊าซเรือนกระจกรวมทั้งหมด {report_data['total_emissions']:.2f} kg CO2e
-            จากข้อมูล {report_data['record_count']} รายการ รายงานนี้เป็นไปตามมาตรฐาน {report_format} และให้ข้อมูลเชิงลึก
-            ที่สามารถนำไปปฏิบัติได้สำหรับกลยุทธ์การลดการปล่อยก๊าซเรือนกระจก จุดสำคัญที่ควรให้ความสนใจ ได้แก่
-            การปรับปรุงประสิทธิภาพการใช้พลังงานและการดำเนินงานที่ยั่งยืนเพื่อบรรลุเป้าหมายการลดคาร์บอน
-            """
+            start_str = self._format_month_year_thai(report_data['period_start'])
+            end_str = self._format_month_year_thai(report_data['period_end'])
+            text = f"""รายงานการปล่อยก๊าซเรือนกระจก {report_format} ฉบับนี้นำเสนอการวิเคราะห์ที่ครอบคลุมเกี่ยวกับการปล่อยก๊าซเรือนกระจกของ {report_data['organization']} ในช่วงระยะเวลาตั้งแต่ {start_str} ถึง {end_str} การปล่อยก๊าซเรือนกระจกรวมทั้งหมด {report_data['total_emissions']:.2f} kg CO2e จากข้อมูล {report_data['record_count']} รายการ รายงานนี้เป็นไปตามมาตรฐาน {report_format} และให้ข้อมูลเชิงลึกที่สามารถนำไปปฏิบัติได้สำหรับกลยุทธ์การลดการปล่อยก๊าซเรือนกระจก จุดสำคัญที่ควรให้ความสนใจ ได้แก่การปรับปรุงประสิทธิภาพการใช้พลังงานและการดำเนินงานที่ยั่งยืนเพื่อบรรลุเป้าหมายการลดคาร์บอน"""
+            return self._clean_thai_text(text)
         else:
             text = f"""
             This {report_format} carbon emissions report presents a comprehensive analysis of greenhouse gas emissions
@@ -482,15 +763,17 @@ class CarbonReportGenerator:
             actionable insights for emission reduction strategies. Key focus areas include energy efficiency improvements
             and sustainable operational practices to achieve carbon reduction goals.
             """
-        # Clean up multiple spaces and newlines
-        return ' '.join(text.split())
+            # Clean up multiple spaces and newlines
+            return ' '.join(text.split())
 
     def _get_fallback_key_findings(self, report_data: Dict, language: str = 'EN') -> List[str]:
         """Fallback key findings"""
         if language == 'TH':
+            start_str = self._format_month_year_thai(report_data['period_start'])
+            end_str = self._format_month_year_thai(report_data['period_end'])
             findings = [
                 f"การปล่อยก๊าซเรือนกระจกรวม: {report_data['total_emissions']:.2f} kg CO2e",
-                f"ช่วงเวลารายงาน: {report_data['period_start'].strftime('%B %Y')} ถึง {report_data['period_end'].strftime('%B %Y')}",
+                f"ช่วงเวลารายงาน: {start_str} ถึง {end_str}",
                 f"จำนวนข้อมูลการปล่อย: {report_data['record_count']} รายการ"
             ]
             
@@ -554,34 +837,134 @@ class CarbonReportGenerator:
         return recommendations
 
     def _get_fallback_trend_analysis(self, report_data: Dict, language: str = 'EN') -> str:
-        """Fallback trend analysis"""
+        """Fallback trend analysis with year-over-year comparison"""
         # Validate monthly_data exists and has sufficient entries
         if not report_data.get('monthly_data') or len(report_data['monthly_data']) < 1:
             return "Insufficient data available for trend analysis." if language == 'EN' else "ข้อมูลไม่เพียงพอสำหรับการวิเคราะห์แนวโน้ม"
 
+        # Try to fetch previous year data for year-over-year comparison
+        period_start = report_data['period_start']
+        period_end = report_data['period_end']
+        current_year = period_start.year
+
+        # Calculate previous year same period
+        prev_year_start = period_start.replace(year=current_year - 1)
+        prev_year_end = period_end.replace(year=current_year - 1)
+
+        # Query previous year emissions
+        try:
+            prev_year_emissions = list(emission_records_collection.find({
+                'record_date': {'$gte': prev_year_start, '$lte': prev_year_end}
+            }))
+            prev_year_total = sum(float(e.get('co2_equivalent', 0)) for e in prev_year_emissions)
+        except:
+            prev_year_total = 0
+
         if len(report_data['monthly_data']) > 1:
             first_month = report_data['monthly_data'][0].get('total', 0)
             last_month = report_data['monthly_data'][-1].get('total', 0)
-            
+            current_total = report_data['total_emissions']
+
+            # Build trend analysis text
             if language == 'TH':
+                text = ""
                 if last_month > first_month:
-                    return f"การปล่อยก๊าซเรือนกระจกแสดงแนวโน้มเพิ่มขึ้นในช่วงระยะเวลารายงาน เพิ่มขึ้นจาก {first_month:.1f} เป็น {last_month:.1f} kg CO2e ซึ่งบ่งชี้ถึงความจำเป็นในการเสริมสร้างมาตรการลดการปล่อยและการติดตามแหล่งปล่อยอย่างใกล้ชิด"
+                    text = f"การปล่อยก๊าซเรือนกระจกแสดงแนวโน้มเพิ่มขึ้นในช่วงระยะเวลารายงาน เพิ่มขึ้นจาก {first_month:.1f} เป็น {last_month:.1f} kg CO2e"
                 elif last_month < first_month:
-                    return f"การปล่อยก๊าซเรือนกระจกแสดงแนวโน้มลดลง ลดลงจาก {first_month:.1f} เป็น {last_month:.1f} kg CO2e แนวโน้มเชิงบวกนี้ควรได้รับการรักษาไว้ผ่านความพยายามในการปรับปรุงอย่างต่อเนื่องและการติดตามเป็นประจำ"
+                    text = f"การปล่อยก๊าซเรือนกระจกแสดงแนวโน้มลดลง ลดลงจาก {first_month:.1f} เป็น {last_month:.1f} kg CO2e"
                 else:
-                    return "การปล่อยก๊าซเรือนกระจกยังคงค่อนข้างคงที่ตลอดช่วงระยะเวลารายงาน แสดงให้เห็นรูปแบบการดำเนินงานที่สม่ำเสมอ ควรมุ่งเน้นไปที่การระบุโอกาสในการลดการปล่อยอย่างเป็นระบบ"
+                    text = "การปล่อยก๊าซเรือนกระจกยังคงค่อนข้างคงที่ตลอดช่วงระยะเวลารายงาน"
+
+                # Add year-over-year comparison if data available
+                if prev_year_total > 0:
+                    change_pct = ((current_total - prev_year_total) / prev_year_total) * 100
+                    if change_pct > 0:
+                        text += f" เมื่อเทียบกับปี {current_year - 1} ({prev_year_total:.1f} kg CO2e) การปล่อยก๊าซเพิ่มขึ้น {abs(change_pct):.1f}% ในปี {current_year}"
+                    elif change_pct < 0:
+                        text += f" เมื่อเทียบกับปี {current_year - 1} ({prev_year_total:.1f} kg CO2e) การปล่อยก๊าซลดลง {abs(change_pct):.1f}% ในปี {current_year}"
+                    else:
+                        text += f" เมื่อเทียบกับปี {current_year - 1} การปล่อยก๊าซคงที่"
+                    text += " ซึ่งบ่งชี้ถึงความจำเป็นในการเสริมสร้างมาตรการลดการปล่อยและการติดตามแหล่งปล่อยอย่างใกล้ชิด"
+
+                return text
             else:
+                text = ""
                 if last_month > first_month:
-                    return f"Emissions showed an increasing trend over the reporting period, rising from {first_month:.1f} to {last_month:.1f} kg CO2e. This indicates a need for enhanced emission reduction measures and closer monitoring of emission sources."
+                    text = f"Emissions showed an increasing trend over the reporting period, rising from {first_month:.1f} to {last_month:.1f} kg CO2e."
                 elif last_month < first_month:
-                    return f"Emissions demonstrated a decreasing trend, falling from {first_month:.1f} to {last_month:.1f} kg CO2e. This positive trend should be maintained through continued improvement efforts and regular monitoring."
+                    text = f"Emissions demonstrated a decreasing trend, falling from {first_month:.1f} to {last_month:.1f} kg CO2e."
                 else:
-                    return "Emissions remained relatively stable throughout the reporting period, indicating consistent operational patterns. Focus should be on identifying opportunities for systematic reductions."
+                    text = "Emissions remained relatively stable throughout the reporting period."
+
+                # Add year-over-year comparison if data available
+                if prev_year_total > 0:
+                    change_pct = ((current_total - prev_year_total) / prev_year_total) * 100
+                    if change_pct > 0:
+                        text += f" Compared to {current_year - 1} ({prev_year_total:.1f} kg CO2e), emissions increased by {abs(change_pct):.1f}% in {current_year}."
+                    elif change_pct < 0:
+                        text += f" Compared to {current_year - 1} ({prev_year_total:.1f} kg CO2e), emissions decreased by {abs(change_pct):.1f}% in {current_year}."
+                    else:
+                        text += f" Emissions remained stable compared to {current_year - 1}."
+                    text += " This indicates a need for enhanced emission reduction measures and closer monitoring of emission sources."
+
+                return text
         else:
             if language == 'TH':
                 return "การวิเคราะห์แนวโน้มต้องการข้อมูลหลายช่วงเวลาเพื่อการประเมินที่มีความหมาย รายงานในอนาคตจะรวมการวิเคราะห์เปรียบเทียบเพื่อระบุรูปแบบและโอกาสในการปรับปรุง"
             else:
                 return "Trend analysis requires multiple reporting periods for meaningful assessment. Future reports will include comparative analysis to identify patterns and improvement opportunities."
+
+    def _get_fallback_emissions_breakdown(self, report_data: Dict, language: str = 'EN') -> str:
+        """Fallback emissions breakdown"""
+        categories_sorted = sorted(report_data['emissions_by_category'].items(), key=lambda x: x[1], reverse=True)
+        total_emissions = report_data['total_emissions']
+
+        if language == 'TH':
+            # Clean category names by replacing underscores with spaces
+            categories_text = ', '.join([f"{cat.replace('_', ' ')} ({(val/total_emissions*100):.1f}%)" for cat, val in categories_sorted[:3] if val > 0])
+            text = f"""การวิเคราะห์การแบ่งประเภทการปล่อยก๊าซเรือนกระจกแสดงให้เห็นว่าการปล่อยทั้งหมด {total_emissions:.2f} kg CO2e มาจากหลายแหล่ง โดยแหล่งปล่อยหลัก ได้แก่ {categories_text} การปล่อยถูกจำแนกตาม GHG Protocol เป็น Scope 1 (การปล่อยโดยตรง) {report_data['emissions_by_scope'].get('Scope 1', 0):.2f} kg CO2e และ Scope 2 (การปล่อยทางอ้อมจากพลังงาน) {report_data['emissions_by_scope'].get('Scope 2', 0):.2f} kg CO2e การทำความเข้าใจการแบ่งประเภทนี้ช่วยในการกำหนดเป้าหมายกลยุทธ์การลดการปล่อยที่มีประสิทธิภาพ"""
+            return self._clean_thai_text(text)
+        else:
+            # Clean category names by replacing underscores with spaces
+            categories_text = ', '.join([f"{cat.replace('_', ' ')} ({(val/total_emissions*100):.1f}%)" for cat, val in categories_sorted[:3] if val > 0])
+            text = f"""
+            The emissions breakdown analysis reveals that total emissions of {total_emissions:.2f} kg CO2e originated from multiple sources.
+            The primary emission sources are {categories_text}.
+            Emissions are categorized according to the GHG Protocol as Scope 1 (direct emissions) {report_data['emissions_by_scope'].get('Scope 1', 0):.2f} kg CO2e
+            and Scope 2 (indirect energy emissions) {report_data['emissions_by_scope'].get('Scope 2', 0):.2f} kg CO2e.
+            Understanding this breakdown is essential for targeting effective emission reduction strategies.
+            """
+            return ' '.join(text.split())
+
+    def _get_fallback_data_quality(self, language: str = 'EN') -> str:
+        """Fallback data quality statement"""
+        if language == 'TH':
+            text = """คุณภาพข้อมูลในรายงานนี้ได้รับการรับรองผ่านกระบวนการเก็บรวบรวมข้อมูลที่เป็นระบบและขั้นตอนการตรวจสอบ ข้อมูลการปล่อยทั้งหมดได้รับการบันทึกและตรวจสอบตามมาตรฐานที่กำหนดไว้ ข้อมูลมีความครบถ้วนสำหรับช่วงเวลารายงานและครอบคลุมแหล่งการปล่อยที่สำคัญทั้งหมด การปรับปรุงอย่างต่อเนื่องในระบบการจัดการข้อมูลจะช่วยเพิ่มความแม่นยำและความน่าเชื่อถือในรายงานในอนาคต"""
+            return self._clean_thai_text(text)
+        else:
+            text = """
+            Data quality in this report is assured through systematic data collection processes and verification procedures.
+            All emission data has been recorded and validated according to established standards.
+            Data completeness is high for the reporting period, covering all material emission sources.
+            Continuous improvements in data management systems will enhance accuracy and reliability in future reports.
+            """
+            return ' '.join(text.split())
+
+    def _get_fallback_conclusion(self, report_data: Dict, language: str = 'EN') -> str:
+        """Fallback conclusion"""
+        if language == 'TH':
+            text = f"""รายงานการปล่อยก๊าซเรือนกระจกฉบับนี้แสดงให้เห็นถึงความมุ่งมั่นของ {report_data['organization']} ในการวัดและจัดการผลกระทบด้านคาร์บอนอย่างโปร่งใส การปล่อยทั้งหมด {report_data['total_emissions']:.2f} kg CO2e ในช่วงระยะเวลารายงานเป็นพื้นฐานสำหรับการกำหนดเป้าหมายและกลยุทธ์การลดการปล่อยในอนาคต องค์กรมุ่งมั่นที่จะปรับปรุงประสิทธิภาพด้านสิ่งแวดล้อมอย่างต่อเนื่องและมีส่วนร่วมในการต่อสู้กับการเปลี่ยนแปลงสภาพภูมิอากาศ การติดตามและรายงานเป็นประจำจะช่วยให้มั่นใจได้ว่าจะบรรลุเป้าหมายด้านความยั่งยืน"""
+            return self._clean_thai_text(text)
+        else:
+            text = f"""
+            This carbon emissions report demonstrates {report_data['organization']}'s commitment to transparent measurement
+            and management of carbon impacts. Total emissions of {report_data['total_emissions']:.2f} kg CO2e during the reporting
+            period provide a foundation for setting future reduction targets and strategies. The organization is committed to
+            continuous environmental performance improvement and contributing to the fight against climate change.
+            Regular monitoring and reporting will ensure progress toward sustainability goals.
+            """
+
+        return ' '.join(text.split())
 
     def _format_date_thai(self, date_obj: datetime) -> str:
         """Format date in Thai (e.g., 15 มกราคม 2025)"""
@@ -589,6 +972,23 @@ class CarbonReportGenerator:
         month = self.thai_months[date_obj.month]
         year = date_obj.year
         return f"{day} {month} {year}"
+
+    def _format_month_year_thai(self, date_obj: datetime) -> str:
+        """Format month and year in Thai (e.g., มกราคม 2025)"""
+        month = self.thai_months[date_obj.month]
+        year = date_obj.year
+        return f"{month} {year}"
+
+    def _clean_thai_text(self, text: str) -> str:
+        """Clean Thai text while preserving proper spacing"""
+        # Remove leading/trailing whitespace from each line
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        # Join lines with a single space
+        result = ' '.join(lines)
+        # Remove multiple consecutive spaces (replace 2+ spaces with 1)
+        import re
+        result = re.sub(r'\s+', ' ', result)
+        return result.strip()
 
     def _format_date_range(self, start_date: datetime, end_date: datetime, language: str) -> str:
         """Format date range based on language"""
@@ -612,28 +1012,40 @@ class CarbonReportGenerator:
         if language == 'TH':
             start_month = self.thai_months[report_data['period_start'].month]
             end_month = self.thai_months[report_data['period_end'].month]
-            subtitle = f'{report_data["organization"]} - {start_month} {report_data["period_start"].year} to {end_month} {report_data["period_end"].year}'
+            subtitle = f'{report_data["organization"]} - {start_month} {report_data["period_start"].year} ถึง {end_month} {report_data["period_end"].year}'
         else:
             subtitle = f'{report_data["organization"]} - {report_data["period_start"].strftime("%B %Y")} to {report_data["period_end"].strftime("%B %Y")}'
 
         return {
             'title': f'{report_format} Carbon Emissions Report',
             'subtitle': subtitle,
+
+            # Core AI-Generated Sections
             'executive_summary': ai_content.get('executive_summary', ''),
+            'trend_analysis': ai_content.get('trend_analysis', ''),
+            'emissions_breakdown': ai_content.get('emissions_breakdown', ''),
+            'methodology': ai_content.get('methodology', self._get_methodology_text(report_format, language)),
+            'data_quality': ai_content.get('data_quality', ''),
+            'recommendations': ai_content.get('recommendations', []),
+            'conclusion': ai_content.get('conclusion', ''),
+
+            # Key Metrics
             'key_metrics': {
                 'total_emissions': f"{report_data['total_emissions']:.2f} kg CO2e",
                 'average_monthly': f"{avg_monthly_emissions:.2f} kg CO2e/month",
                 'reporting_period': date_range,
                 'record_count': f"{report_data['record_count']}"
             },
+
+            # Data Breakdown
             'emissions_by_scope': report_data['emissions_by_scope'],
             'emissions_by_category': report_data['emissions_by_category'],
             'monthly_data': report_data['monthly_data'],
+
+            # Legacy support
             'key_findings': ai_content.get('key_findings', []),
-            'recommendations': ai_content.get('recommendations', []),
-            'trend_analysis': ai_content.get('trend_analysis', ''),
-            'compliance_notes': ai_content.get('compliance_notes', ''),
-            'methodology': self._get_methodology_text(report_format, language),
+
+            # Metadata
             'generated_at': datetime.now().strftime('%d %B %Y at %H:%M')
         }
 
@@ -641,24 +1053,9 @@ class CarbonReportGenerator:
         """Get methodology text based on report format and language"""
         if language == 'TH':
             methodologies = {
-                'ISO': """
-                รายงานนี้เป็นไปตามหลักการ ISO 14064-1:2018 สำหรับการวัดและรายงานก๊าซเรือนกระจก
-                ค่าสัมประสิทธิ์การปล่อยมาจากแนวทาง IPCC และหน่วยงานกำกับดูแลในท้องถิ่น
-                การเก็บรวบรวมข้อมูลเป็นไปตามขั้นตอนที่เป็นระบบเพื่อให้แน่ใจว่ามีความถูกต้องและครบถ้วน
-                การคำนวณทั้งหมดใช้แนวทางการควบคุมการดำเนินงานสำหรับการกำหนดขอบเขตองค์กร
-                """,
-                'CFO': """
-                รายงานนี้ใช้วิธีการบัญชีคาร์บอนมาตรฐานที่เหมาะสำหรับการรายงานทางการเงิน
-                การคำนวณการปล่อยเป็นไปตามโปรโตคอลที่กำหนดไว้โดยเน้นผลกระทบที่สำคัญ
-                การนำเสนอข้อมูลเพื่อสนับสนุนการตัดสินใจเชิงกลยุทธ์และการประเมินความเสี่ยง
-                ผลกระทบทางการเงินของการปล่อยคาร์บอนได้รับการพิจารณาตลอดการวิเคราะห์
-                """,
-                'GHG': """
-                รายงานนี้เป็นไปตามมาตรฐาน GHG Protocol Corporate Accounting and Reporting Standard
-                การปล่อยก๊าซเรือนกระจกถูกจำแนกตาม Scope 1, 2, และ 3 ตามที่กำหนดใน GHG Protocol
-                วิธีการคำนวณเป็นไปตามแนวทาง GHG Protocol สำหรับการจัดทำรายการขององค์กร
-                การจัดการคุณภาพข้อมูลและความไม่แน่นอนเป็นไปตามข้อกำหนดของ GHG Protocol
-                """
+                'ISO': """รายงานนี้เป็นไปตามหลักการ ISO 14064-1:2018 สำหรับการวัดและรายงานก๊าซเรือนกระจก ค่าสัมประสิทธิ์การปล่อยมาจากแนวทาง IPCC และหน่วยงานกำกับดูแลในท้องถิ่น การเก็บรวบรวมข้อมูลเป็นไปตามขั้นตอนที่เป็นระบบเพื่อให้แน่ใจว่ามีความถูกต้องและครบถ้วน การคำนวณทั้งหมดใช้แนวทางการควบคุมการดำเนินงานสำหรับการกำหนดขอบเขตองค์กร""",
+                'CFO': """รายงานนี้ใช้วิธีการบัญชีคาร์บอนมาตรฐานที่เหมาะสำหรับการรายงานทางการเงิน การคำนวณการปล่อยเป็นไปตามโปรโตคอลที่กำหนดไว้โดยเน้นผลกระทบที่สำคัญ การนำเสนอข้อมูลเพื่อสนับสนุนการตัดสินใจเชิงกลยุทธ์และการประเมินความเสี่ยง ผลกระทบทางการเงินของการปล่อยคาร์บอนได้รับการพิจารณาตลอดการวิเคราะห์""",
+                'GHG': """รายงานนี้เป็นไปตามมาตรฐาน GHG Protocol Corporate Accounting and Reporting Standard การปล่อยก๊าซเรือนกระจกถูกจำแนกตาม Scope 1, 2, และ 3 ตามที่กำหนดใน GHG Protocol วิธีการคำนวณเป็นไปตามแนวทาง GHG Protocol สำหรับการจัดทำรายการขององค์กร การจัดการคุณภาพข้อมูลและความไม่แน่นอนเป็นไปตามข้อกำหนดของ GHG Protocol"""
             }
         else:
             methodologies = {
@@ -685,7 +1082,10 @@ class CarbonReportGenerator:
         default_text = "วิธีการบัญชีคาร์บอนมาตรฐานถูกนำมาใช้" if language == 'TH' else "Standard carbon accounting methodologies applied."
         # Clean up multiple spaces and newlines from the methodology text
         text = methodologies.get(report_format, default_text)
-        return ' '.join(text.split())
+        if language == 'TH':
+            return self._clean_thai_text(text)
+        else:
+            return ' '.join(text.split())
 
     def _generate_report_file(self, content: Dict, report_format: str, file_type: str, language: str) -> str:
         """Generate report file based on type and language"""
@@ -708,8 +1108,11 @@ class CarbonReportGenerator:
                 'scope_2_title': 'การปล่อยทางอ้อมจากพลังงาน (Scope 2)',
                 'key_findings_title': 'ผลการวิเคราะห์สำคัญ',
                 'recommendations_title': 'ข้อเสนอแนะ',
+                'trend_analysis_title': 'การวิเคราะห์แนวโน้ม',
+                'emissions_breakdown_title': 'การแบ่งประเภทการปล่อยก๊าซ',
                 'methodology_title': 'วิธีการคำนวณ',
-                'compliance_title': 'การปฏิบัติตามมาตรฐาน',
+                'data_quality_title': 'คำชี้แจงคุณภาพข้อมูล',
+                'conclusion_title': 'สรุป',
                 'scope_descriptions': {
                     'Scope 1': 'การปล่อยก๊าซเรือนกระจกโดยตรงจากแหล่งที่องค์กรเป็นเจ้าของหรือควบคุม (เชื้อเพลิง สารทำความเย็น การเผาไหม้)',
                     'Scope 2': 'การปล่อยก๊าซเรือนกระจกทางอ้อมจากการซื้อพลังงานไฟฟ้า'
@@ -723,8 +1126,11 @@ class CarbonReportGenerator:
                 'scope_2_title': 'Scope 2 Indirect Emissions from Energy',
                 'key_findings_title': 'Key Findings',
                 'recommendations_title': 'Recommendations',
+                'trend_analysis_title': 'Trend Analysis',
+                'emissions_breakdown_title': 'Emissions Breakdown',
                 'methodology_title': 'Methodology',
-                'compliance_title': 'Compliance Notes',
+                'data_quality_title': 'Data Quality Statement',
+                'conclusion_title': 'Conclusion',
                 'scope_descriptions': {
                     'Scope 1': 'Direct greenhouse gas emissions from sources owned or controlled by the organization (fuels, refrigerants, combustion)',
                     'Scope 2': 'Indirect greenhouse gas emissions from purchased electricity'
@@ -1111,38 +1517,42 @@ class CarbonReportGenerator:
                 fontSize=18,
                 spaceAfter=30,
                 alignment=1,  # Center alignment
-                leading=24    # Increased leading for Thai text
+                leading=28,   # Increased leading for better Thai text spacing
+                wordSpace=1   # Add slight word spacing
             ))
-            
+
             # Heading style
             styles.add(ParagraphStyle(
                 name='ThaiHeading',
                 parent=styles['Heading2'],
                 fontName=bold_font,
                 fontSize=14,
-                spaceBefore=12,
-                spaceAfter=6,
-                leading=20    # Increased leading for Thai text
+                spaceBefore=16,
+                spaceAfter=10,
+                leading=22,    # Increased leading for better Thai text spacing
+                wordSpace=1    # Add slight word spacing
             ))
-            
+
             # Normal text style
             styles.add(ParagraphStyle(
                 name='ThaiNormal',
                 parent=styles['Normal'],
                 fontName=base_font,
                 fontSize=12,
-                leading=18,   # Increased leading for Thai text
-                spaceAfter=6
+                leading=20,    # Increased leading for better Thai text spacing
+                spaceAfter=10,
+                wordSpace=1    # Add slight word spacing
             ))
-            
+
             # Table header style
             styles.add(ParagraphStyle(
                 name='ThaiTableHeader',
                 parent=styles['Normal'],
                 fontName=bold_font,
                 fontSize=12,
-                leading=16,
-                alignment=1
+                leading=18,
+                alignment=1,
+                wordSpace=1
             ))
         
         return styles
@@ -1413,26 +1823,29 @@ class CarbonReportGenerator:
                 fontSize=18,
                 spaceAfter=30,
                 alignment=1,
-                leading=24
+                leading=28,
+                wordSpace=1
             ))
-            
+
             styles.add(ParagraphStyle(
                 name='ThaiHeading',
                 parent=styles['Heading1'],
                 fontName='Helvetica-Bold',
                 fontSize=14,
-                spaceBefore=12,
-                spaceAfter=6,
-                leading=20
+                spaceBefore=16,
+                spaceAfter=10,
+                leading=22,
+                wordSpace=1
             ))
-            
+
             styles.add(ParagraphStyle(
                 name='ThaiNormal',
                 parent=styles['Normal'],
                 fontName='Helvetica',
                 fontSize=12,
-                leading=18,
-                spaceAfter=6
+                leading=20,
+                spaceAfter=10,
+                wordSpace=1
             ))
         
         return styles
@@ -1617,11 +2030,6 @@ class CarbonReportGenerator:
             story.append(Paragraph(content['methodology'], styles.get(normal_style_name, styles['Normal'])))
             story.append(Spacer(1, 20))
             
-            # Compliance Notes
-            story.append(Paragraph(template['compliance_title'], styles.get(heading_style_name, styles['Heading2'])))
-            story.append(Paragraph(content['compliance_notes'], styles.get(normal_style_name, styles['Normal'])))
-            story.append(Spacer(1, 20))
-            
             # Footer
             story.append(Spacer(1, 30))
             footer_text = f"รายงานสร้างเมื่อ {content['generated_at']}" if language == 'TH' else f"Report generated on {content['generated_at']}"
@@ -1736,6 +2144,84 @@ class CarbonReportGenerator:
             print(f"Excel generation error: {str(e)}")
             return None
 
+    def _set_thai_font(self, run, language: str):
+        """Set appropriate font for Thai text"""
+        if language == 'TH':
+            from docx.shared import Pt
+            # Use Angsana New - a standard Windows Thai font with excellent spacing
+            # This font is pre-installed on Windows and handles Thai text very well
+            run.font.name = 'Angsana New'
+            run.font.size = Pt(16)  # Angsana New needs larger size for readability
+
+    def _add_formatted_text_to_paragraph(self, paragraph, text: str, language: str):
+        """Add text to paragraph with proper formatting for underscored terms and mixed content"""
+        import re
+        from docx.shared import Pt
+
+        if language == 'TH':
+            # For Thai content, we need to handle mixed Thai-English text
+            # Pattern to match: _underscored_ or standalone English words/numbers
+            pattern = r'(_[^_]+_|[A-Za-z0-9_]+(?:\s*\([^)]*\))?)'
+
+            last_end = 0
+            for match in re.finditer(pattern, text):
+                # Add Thai text before the match
+                if match.start() > last_end:
+                    thai_text = text[last_end:match.start()]
+                    thai_run = paragraph.add_run(thai_text)
+                    thai_run.font.name = 'Angsana New'
+                    thai_run.font.size = Pt(12)
+
+                matched_text = match.group(0)
+
+                # Check if it's underscored text
+                if matched_text.startswith('_') and matched_text.endswith('_'):
+                    # Remove underscores and apply special formatting
+                    clean_text = matched_text[1:-1]
+                    special_run = paragraph.add_run(clean_text)
+                    special_run.font.name = 'Cambria (Body)'
+                    special_run.font.size = Pt(11)
+                    special_run.underline = True
+                else:
+                    # English text/numbers - use normal English font
+                    eng_run = paragraph.add_run(matched_text)
+                    eng_run.font.size = Pt(11)
+
+                last_end = match.end()
+
+            # Add remaining Thai text
+            if last_end < len(text):
+                remaining_thai = text[last_end:]
+                thai_run = paragraph.add_run(remaining_thai)
+                thai_run.font.name = 'Angsana New'
+                thai_run.font.size = Pt(12)
+        else:
+            # For English content, only handle underscored text
+            pattern = r'_([^_]+)_'
+
+            last_end = 0
+            for match in re.finditer(pattern, text):
+                # Add text before the underscored section
+                if match.start() > last_end:
+                    normal_text = text[last_end:match.start()]
+                    normal_run = paragraph.add_run(normal_text)
+                    normal_run.font.size = Pt(11)
+
+                # Add the underscored text with Cambria font size 11 and underline (same size as body text)
+                underscored_text = match.group(1)
+                special_run = paragraph.add_run(underscored_text)
+                special_run.font.name = 'Cambria (Body)'
+                special_run.font.size = Pt(11)
+                special_run.underline = True
+
+                last_end = match.end()
+
+            # Add remaining text after last match
+            if last_end < len(text):
+                remaining_text = text[last_end:]
+                remaining_run = paragraph.add_run(remaining_text)
+                remaining_run.font.size = Pt(11)
+
     def _generate_word_report(self, content: Dict, report_format: str, language: str = 'EN') -> str:
         """Generate Word document report with improved professional layout"""
         try:
@@ -1744,18 +2230,18 @@ class CarbonReportGenerator:
             from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
             from docx.enum.table import WD_TABLE_ALIGNMENT
             from docx.oxml.shared import OxmlElement, qn
-            
+
             # Get template content
             template = self._get_ghg_template_content(language)
-            
+
             # Create filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"carbon_report_{report_format}_{language}_{timestamp}.docx"
             filepath = os.path.join('reports', filename)
-            
+
             # Ensure reports directory exists
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
+
             # Create document with improved margins
             doc = Document()
             
@@ -1811,9 +2297,8 @@ class CarbonReportGenerator:
             exec_heading.space_before = Pt(18)
             exec_heading.space_after = Pt(12)
             
-            exec_para = doc.add_paragraph(content['executive_summary'])
-            exec_para.style.font.size = Pt(11)
-            exec_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            exec_para = doc.add_paragraph()
+            self._add_formatted_text_to_paragraph(exec_para, content['executive_summary'], language)
             exec_para.space_after = Pt(18)
             
             # Key Metrics Section with enhanced table
@@ -1922,7 +2407,6 @@ class CarbonReportGenerator:
                 for finding in content['key_findings']:
                     finding_para = doc.add_paragraph(finding, style='List Bullet')
                     finding_para.style.font.size = Pt(11)
-                    finding_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 
                 doc.add_paragraph()  # Add space
             
@@ -1938,9 +2422,8 @@ class CarbonReportGenerator:
                         rec_para = doc.add_paragraph(recommendation, style='List Bullet')
                     else:
                         rec_para = doc.add_paragraph(recommendation, style='List Number')
-                    
+
                     rec_para.style.font.size = Pt(11)
-                    rec_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 
                 doc.add_paragraph()  # Add space
             
@@ -1949,36 +2432,58 @@ class CarbonReportGenerator:
                 trend_heading = doc.add_heading('Trend Analysis' if language == 'EN' else 'การวิเคราะห์แนวโน้ม', level=1)
                 trend_heading_run = trend_heading.runs[0]
                 trend_heading_run.font.color.rgb = RGBColor(0, 54, 146)
-                
-                trend_para = doc.add_paragraph(content['trend_analysis'])
-                trend_para.style.font.size = Pt(11)
-                trend_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                
+
+                trend_para = doc.add_paragraph()
+                self._add_formatted_text_to_paragraph(trend_para, content['trend_analysis'], language)
+
                 doc.add_paragraph()  # Add space
-            
-            # Page break for methodology and compliance
+
+            # Emissions Breakdown Section (NEW)
+            if content.get('emissions_breakdown'):
+                breakdown_heading = doc.add_heading('Emissions Breakdown' if language == 'EN' else 'การแบ่งประเภทการปล่อยก๊าซ', level=1)
+                breakdown_heading_run = breakdown_heading.runs[0]
+                breakdown_heading_run.font.color.rgb = RGBColor(0, 54, 146)
+
+                breakdown_para = doc.add_paragraph()
+                self._add_formatted_text_to_paragraph(breakdown_para, content['emissions_breakdown'], language)
+
+                doc.add_paragraph()  # Add space
+
+            # Page break for methodology
             doc.add_page_break()
-            
+
             # Methodology Section
             method_heading = doc.add_heading(template['methodology_title'], level=1)
             method_heading_run = method_heading.runs[0]
             method_heading_run.font.color.rgb = RGBColor(0, 54, 146)
-            
-            method_para = doc.add_paragraph(content['methodology'])
-            method_para.style.font.size = Pt(10)
-            method_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            
+
+            method_para = doc.add_paragraph()
+            self._add_formatted_text_to_paragraph(method_para, content['methodology'], language)
+
             doc.add_paragraph()  # Add space
-            
-            # Compliance Notes Section
-            compliance_heading = doc.add_heading(template['compliance_title'], level=1)
-            compliance_heading_run = compliance_heading.runs[0]
-            compliance_heading_run.font.color.rgb = RGBColor(0, 54, 146)
-            
-            compliance_para = doc.add_paragraph(content['compliance_notes'])
-            compliance_para.style.font.size = Pt(10)
-            compliance_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            
+
+            # Data Quality Section (NEW)
+            if content.get('data_quality'):
+                data_quality_heading = doc.add_heading('Data Quality Statement' if language == 'EN' else 'คำชี้แจงคุณภาพข้อมูล', level=1)
+                data_quality_heading_run = data_quality_heading.runs[0]
+                data_quality_heading_run.font.color.rgb = RGBColor(0, 54, 146)
+
+                data_quality_para = doc.add_paragraph()
+                self._add_formatted_text_to_paragraph(data_quality_para, content['data_quality'], language)
+
+                doc.add_paragraph()  # Add space
+
+            # Conclusion Section (NEW)
+            if content.get('conclusion'):
+                conclusion_heading = doc.add_heading('Conclusion' if language == 'EN' else 'สรุป', level=1)
+                conclusion_heading_run = conclusion_heading.runs[0]
+                conclusion_heading_run.font.color.rgb = RGBColor(0, 54, 146)
+
+                conclusion_para = doc.add_paragraph()
+                self._add_formatted_text_to_paragraph(conclusion_para, content['conclusion'], language)
+
+                doc.add_paragraph()  # Add space
+
             # Footer with enhanced styling
             doc.add_paragraph()
             doc.add_paragraph()

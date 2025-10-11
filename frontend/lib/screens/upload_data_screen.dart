@@ -733,23 +733,43 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
   // Download Excel template
   void _downloadExcelTemplate() {
     try {
+      // Create Excel with explicit sheet name
       final excel = Excel.createExcel();
-      
-      // Remove default sheet and create a new one
-      excel.delete('Sheet1');
+
+      // Create our template sheet first
       Sheet sheet = excel['TGO_Emissions_Template'];
-      
+
       // Get template data
       final templateData = UploadService.generateExcelTemplateData();
-      
+
       // Add data to sheet
       for (int rowIndex = 0; rowIndex < templateData.length; rowIndex++) {
         final row = templateData[rowIndex];
         for (int colIndex = 0; colIndex < row.length; colIndex++) {
           final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: colIndex, rowIndex: rowIndex));
-          
-          cell.value = TextCellValue(row[colIndex].toString());
-          
+
+          // For date cells (column 0, rows > 0), format as date
+          if (colIndex == 0 && rowIndex > 0) {
+            // Parse the DD/MM/YYYY date and format as Excel date
+            final dateParts = row[colIndex].toString().split('/');
+            if (dateParts.length == 3) {
+              final day = int.parse(dateParts[0]);
+              final month = int.parse(dateParts[1]);
+              final year = int.parse(dateParts[2]);
+              final date = DateTime(year, month, day);
+              // Format as DD/MM/YYYY for Excel
+              cell.value = DateCellValue(
+                year: date.year,
+                month: date.month,
+                day: date.day,
+              );
+            } else {
+              cell.value = TextCellValue(row[colIndex].toString());
+            }
+          } else {
+            cell.value = TextCellValue(row[colIndex].toString());
+          }
+
           // Style header row
           if (rowIndex == 0) {
             cell.cellStyle = CellStyle(
@@ -759,7 +779,15 @@ class _UploadDataScreenState extends State<UploadDataScreen> {
           }
         }
       }
-      
+
+      // Now remove the default Sheet1 AFTER we created our template
+      try {
+        excel.delete('Sheet1');
+      } catch (e) {
+        // Sheet1 might not exist, ignore error
+        print('Sheet1 not found or already deleted: $e');
+      }
+
       // Auto-fit columns for 4 columns
       sheet.setColumnWidth(0, 15); // Date column
       sheet.setColumnWidth(1, 30); // Category column (wider for category names)

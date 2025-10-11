@@ -44,7 +44,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   // Chart visualization preferences
   String _trendChartType = 'line'; // line, bar, area
   String _categoryChartType = 'pie'; // pie, bar, donut
-  String _timeRange = 'year'; // year, 6months, 3months
+  String _timeRange = 'all'; // all, q1, q2, q3, q4
   bool _showComparison = true; // Show previous year comparison
 
   @override
@@ -55,9 +55,9 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
 
   Future<void> _loadDashboardData() async {
     if (!mounted) return;
-  
+
     setState(() => _isLoading = true);
-  
+
     try {
       final result = await ApiService.getDashboardData();
     
@@ -1645,6 +1645,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
           maxY: maxY,
+          minY: 0,
           barTouchData: BarTouchData(
             enabled: true,
             touchTooltipData: BarTouchTooltipData(
@@ -1700,8 +1701,14 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                 showTitles: true,
                 reservedSize: 50,
                 getTitlesWidget: (value, meta) {
+                  if (value >= 1000) {
+                    return Text(
+                      '${(value / 1000).toStringAsFixed(1)}k',
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    );
+                  }
                   return Text(
-                    '${(value / 1000).toStringAsFixed(1)}k',
+                    '${value.toInt()}',
                     style: const TextStyle(fontSize: 10, color: Colors.grey),
                   );
                 },
@@ -1797,34 +1804,48 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   }
 
   List<dynamic> _getFilteredMonthlyData(List<dynamic> yearData) {
-    if (_timeRange == '3months') {
-      final now = DateTime.now();
-      final currentMonth = now.month - 1;
-      final startMonth = (currentMonth - 2).clamp(0, 11);
-      return yearData.sublist(startMonth, currentMonth + 1);
-    } else if (_timeRange == '6months') {
-      final now = DateTime.now();
-      final currentMonth = now.month - 1;
-      final startMonth = (currentMonth - 5).clamp(0, 11);
-      return yearData.sublist(startMonth, currentMonth + 1);
+    if (yearData.isEmpty) return yearData;
+
+    // Q1: Jan-Mar (months 0-2)
+    if (_timeRange == 'q1') {
+      return yearData.length >= 3 ? yearData.sublist(0, 3) : yearData;
     }
+    // Q2: Apr-Jun (months 3-5)
+    else if (_timeRange == 'q2') {
+      return yearData.length >= 6 ? yearData.sublist(3, 6) : [];
+    }
+    // Q3: Jul-Sep (months 6-8)
+    else if (_timeRange == 'q3') {
+      return yearData.length >= 9 ? yearData.sublist(6, 9) : [];
+    }
+    // Q4: Oct-Dec (months 9-11)
+    else if (_timeRange == 'q4') {
+      return yearData.length >= 12 ? yearData.sublist(9, 12) : [];
+    }
+
     return yearData;
   }
 
   List<String> _getMonthLabels() {
     const allMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    if (_timeRange == '3months') {
-      final now = DateTime.now();
-      final currentMonth = now.month - 1;
-      final startMonth = (currentMonth - 2).clamp(0, 11);
-      return allMonths.sublist(startMonth, currentMonth + 1);
-    } else if (_timeRange == '6months') {
-      final now = DateTime.now();
-      final currentMonth = now.month - 1;
-      final startMonth = (currentMonth - 5).clamp(0, 11);
-      return allMonths.sublist(startMonth, currentMonth + 1);
+    // Q1: Jan-Mar
+    if (_timeRange == 'q1') {
+      return allMonths.sublist(0, 3);
     }
+    // Q2: Apr-Jun
+    else if (_timeRange == 'q2') {
+      return allMonths.sublist(3, 6);
+    }
+    // Q3: Jul-Sep
+    else if (_timeRange == 'q3') {
+      return allMonths.sublist(6, 9);
+    }
+    // Q4: Oct-Dec
+    else if (_timeRange == 'q4') {
+      return allMonths.sublist(9, 12);
+    }
+
     return allMonths;
   }
 
@@ -1915,53 +1936,6 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                // Language Switcher in Sidebar
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.green[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green[200]!),
-                  ),
-                  child: ListTile(
-                    leading: Icon(Icons.language, color: Colors.green[700]),
-                    title: Text(
-                      localization.isThaiLanguage ? 'เปลี่ยนภาษา' : 'Change Language',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        color: Colors.green[800],
-                      ),
-                    ),
-                    subtitle: Text(
-                      localization.isThaiLanguage ? 'ไทย → English' : 'English → ไทย',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green[600],
-                      ),
-                    ),
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.green[700],
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        localization.isThaiLanguage ? 'EN' : 'TH',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    onTap: () {
-                      localization.toggleLanguage();
-                      _loadDashboardData(); // Refresh data after language change
-                      Navigator.pop(context); // Close drawer after selection
-                    },
-                  ),
-                ),
-                const Divider(height: 1),
                 _buildDrawerItem(
                   icon: Icons.dashboard_rounded,
                   title: localization.smartDashboard,
@@ -2871,9 +2845,11 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
       ),
       child: Row(
         children: [
-          _buildTimeRangeButton('3months', '3M'),
-          _buildTimeRangeButton('6months', '6M'),
-          _buildTimeRangeButton('year', '1Y'),
+          _buildTimeRangeButton('all', 'All'),
+          _buildTimeRangeButton('q1', 'Q1'),
+          _buildTimeRangeButton('q2', 'Q2'),
+          _buildTimeRangeButton('q3', 'Q3'),
+          _buildTimeRangeButton('q4', 'Q4'),
         ],
       ),
     );
@@ -3255,8 +3231,13 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     // Use actual data from dashboard or show empty state
     final monthlyData = _dashboardData['monthly_trend'] as List? ?? [];
     final lastYearData = _dashboardData['last_year_trend'] as List? ?? [];
-    final hasCurrentYearData = monthlyData.any((m) => (m['total'] ?? 0) > 0);
-    final hasLastYearData = lastYearData.any((m) => (m['total'] ?? 0) > 0);
+
+    // Apply time range filtering
+    List<dynamic> displayData = _getFilteredMonthlyData(monthlyData);
+    List<dynamic> displayLastYear = _getFilteredMonthlyData(lastYearData);
+
+    final hasCurrentYearData = displayData.any((m) => (m['total'] ?? 0) > 0);
+    final hasLastYearData = displayLastYear.any((m) => (m['total'] ?? 0) > 0);
     
     // If no data, show empty state
     if (!hasCurrentYearData && !hasLastYearData) {
@@ -3332,42 +3313,84 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
       );
     }
 
-    // Create flat line chart data showing actual data or zeros
-    List<LineChartBarData> lineBarsData = [];
-    
-    if (hasCurrentYearData) {
-      lineBarsData.add(
-        LineChartBarData(
-          spots: monthlyData.asMap().entries.map((entry) {
-            return FlSpot(entry.key.toDouble(), (entry.value['total'] ?? 0).toDouble());
-          }).toList(),
-          isCurved: true,
-          color: const Color(0xFF059669),
-          barWidth: 3,
-          dotData: const FlDotData(show: true),
-          belowBarData: BarAreaData(
-            show: true,
-            color: const Color(0xFF059669).withOpacity(0.1),
+    // Create bar chart data showing actual data with grouped bars
+    List<BarChartGroupData> barGroups = [];
+    double maxValue = 0;
+
+    // Get month labels based on time range filter
+    final monthLabels = _getMonthLabels();
+    final dataLength = displayData.length;
+
+    // Create grouped bars for filtered months
+    for (int i = 0; i < dataLength; i++) {
+      final currentYearValue = hasCurrentYearData && i < displayData.length
+          ? (displayData[i]['total'] ?? 0).toDouble()
+          : 0.0;
+      final lastYearValue = hasLastYearData && i < displayLastYear.length
+          ? (displayLastYear[i]['total'] ?? 0).toDouble()
+          : 0.0;
+
+      if (currentYearValue > maxValue) maxValue = currentYearValue;
+      if (lastYearValue > maxValue) maxValue = lastYearValue;
+
+      final List<BarChartRodData> rods = [];
+
+      // Add current year bar if it has data
+      if (hasCurrentYearData) {
+        rods.add(
+          BarChartRodData(
+            toY: currentYearValue,
+            color: const Color(0xFF059669),
+            width: 8,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(4),
+            ),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF059669),
+                const Color(0xFF059669).withOpacity(0.7),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
           ),
+        );
+      }
+
+      // Add last year bar if it has data
+      if (hasLastYearData) {
+        rods.add(
+          BarChartRodData(
+            toY: lastYearValue,
+            color: const Color(0xFF6B7280),
+            width: 8,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(4),
+            ),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF6B7280),
+                const Color(0xFF6B7280).withOpacity(0.7),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        );
+      }
+
+      barGroups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: rods,
+          barsSpace: 4,
         ),
       );
     }
-    
-    if (hasLastYearData) {
-      lineBarsData.add(
-        LineChartBarData(
-          spots: lastYearData.asMap().entries.map((entry) {
-            return FlSpot(entry.key.toDouble(), (entry.value['total'] ?? 0).toDouble());
-          }).toList(),
-          isCurved: true,
-          color: const Color(0xFF6B7280),
-          barWidth: 2,
-          dashArray: [5, 5],
-          dotData: const FlDotData(show: false),
-          belowBarData: BarAreaData(show: false),
-        ),
-      );
-    }
+
+    // Calculate appropriate maxY with padding
+    final calculatedMaxY = maxValue * 1.2;
+    final double finalMaxY = calculatedMaxY > 0 ? calculatedMaxY : 100.0;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -3416,49 +3439,78 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
           Row(
             children: [
               // This Year
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF059669),
-                      borderRadius: BorderRadius.circular(4),
+              if (hasCurrentYearData)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF059669),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text('${DateTime.now().year} Total', style: const TextStyle(fontSize: 12)),
-                ],
-              ),
-              const SizedBox(width: 24),
+                    const SizedBox(width: 8),
+                    Text('${DateTime.now().year}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              if (hasCurrentYearData && hasLastYearData) const SizedBox(width: 24),
               // Last Year
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 16,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6B7280),
-                      borderRadius: BorderRadius.circular(2),
+              if (hasLastYearData)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B7280),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text('${DateTime.now().year - 1} Total', style: const TextStyle(fontSize: 12)),
-                ],
-              ),
+                    const SizedBox(width: 8),
+                    Text('${DateTime.now().year - 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                  ],
+                ),
             ],
           ),
           const SizedBox(height: 20),
           
-          // Line Chart
+          // Bar Chart
           SizedBox(
             height: 250,
-            child: LineChart(
-              LineChartData(
-                maxY: 10000,
+            child: BarChart(
+              BarChartData(
+                maxY: finalMaxY,
                 minY: 0,
+                alignment: BarChartAlignment.spaceAround,
+                groupsSpace: 12,
+                barTouchData: BarTouchData(
+                  enabled: true,
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      // Use the filtered month labels
+                      final monthIndex = group.x.toInt();
+                      final month = monthIndex >= 0 && monthIndex < monthLabels.length
+                          ? monthLabels[monthIndex]
+                          : '';
+
+                      // Determine which year this bar represents
+                      final isCurrentYear = rodIndex == 0;
+                      final year = isCurrentYear ? DateTime.now().year : DateTime.now().year - 1;
+
+                      return BarTooltipItem(
+                        '$month $year\n${rod.toY.toStringAsFixed(0)} kg CO₂',
+                        const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      );
+                    },
+                  ),
+                ),
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
@@ -3473,9 +3525,18 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 40,
+                      reservedSize: 50,
                       getTitlesWidget: (value, meta) {
-                        return Text('${value.toInt()}', style: const TextStyle(fontSize: 10));
+                        if (value >= 1000) {
+                          return Text(
+                            '${(value / 1000).toStringAsFixed(1)}k',
+                            style: const TextStyle(fontSize: 10, color: Colors.grey),
+                          );
+                        }
+                        return Text(
+                          '${value.toInt()}',
+                          style: const TextStyle(fontSize: 10, color: Colors.grey),
+                        );
                       },
                     ),
                   ),
@@ -3485,13 +3546,14 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                     sideTitles: SideTitles(
                       showTitles: true,
                       getTitlesWidget: (value, meta) {
-                        const months = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-                        if (value.toInt() >= 0 && value.toInt() < months.length) {
+                        // Use first letter of month labels for bar chart
+                        final monthAbbreviations = monthLabels.map((m) => m[0]).toList();
+                        if (value.toInt() >= 0 && value.toInt() < monthAbbreviations.length) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              months[value.toInt()],
-                              style: const TextStyle(fontSize: 12),
+                              monthAbbreviations[value.toInt()],
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
                             ),
                           );
                         }
@@ -3501,25 +3563,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                   ),
                 ),
                 borderData: FlBorderData(show: false),
-                lineBarsData: lineBarsData,
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor: Colors.grey[800]!,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        final month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][spot.x.toInt()];
-                        final isCurrentYear = spot.barIndex == 0;
-                        final year = isCurrentYear ? DateTime.now().year : DateTime.now().year - 1;
-                        
-                        return LineTooltipItem(
-                          '$month $year\nTotal: ${spot.y.toStringAsFixed(0)} kg CO₂',
-                          const TextStyle(color: Colors.white, fontSize: 12),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
+                barGroups: barGroups,
               ),
             ),
           ),

@@ -149,12 +149,11 @@ class LocalizationService extends ChangeNotifier {
   String get usingTgoFactors => isThaiLanguage ? 'ใช้ค่าสัมประสิทธิ์การปล่อยของ TGO ประเทศไทย (เมษายน 2022)' : 'Using TGO Thailand emission factors (April 2022)';
   String get tgoDescription => isThaiLanguage ? 'องค์การบริหารจัดการก๊าซเรือนกระจกประเทศไทย (TGO)' : 'Thailand Greenhouse Gas Management Organization (TGO)';
   String get updated => isThaiLanguage ? 'อัปเดต:' : 'Updated:';
-  String get tgoFactorsDescription => isThaiLanguage ? 
+  String get tgoFactorsDescription => isThaiLanguage ?
     'แอปนี้ใช้ค่าสัมประสิทธิ์การปล่อยอย่างเป็นทางการจาก TGO ประเทศไทย จัดระเบียบตามขอบเขต GHG Protocol:' :
     'This app uses official emission factors from TGO Thailand, organized by GHG Protocol Scopes:';
   String get scope1 => isThaiLanguage ? 'ขอบเขตที่ 1: การปล่อยโดยตรงจากแหล่งที่เป็นเจ้าของ/ควบคุม' : 'Scope 1: Direct emissions from owned/controlled sources';
   String get scope2 => isThaiLanguage ? 'ขอบเขตที่ 2: การปล่อยทางอ้อมจากพลังงานที่ซื้อ' : 'Scope 2: Indirect emissions from purchased energy';
-  String get scope3 => isThaiLanguage ? 'ขอบเขตที่ 3: การปล่อยทางอ้อมอื่น ๆ ในห่วงโซ่คุณค่า' : 'Scope 3: Other indirect emissions in value chain';
   String get allFactorsDescription => isThaiLanguage ? 
     'ค่าสัมประสิทธิ์ทั้งหมดเป็น kgCO₂eq ต่อหน่วย และเป็นไปตามมาตรฐานสากล (IPCC, GHG Protocol)' :
     'All factors are in kgCO₂eq per unit and follow international standards (IPCC, GHG Protocol).';
