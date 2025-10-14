@@ -1,0 +1,1197 @@
+[{
+  "_id": {
+    "$oid": "68db6826c478e541e612155e"
+  },
+  "factor_id": "NATURAL_GAS_SCF",
+  "fuel_key": "natural_gas_scf",
+  "activity_type": "natural_gas_scf",
+  "name": "Natural Gas (SCF)",
+  "unit": "scf",
+  "value": 0.0573,
+  "factor": 0.0573,
+  "notes": "Volumetric measurement",
+  "description": "Natural Gas (SCF) emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.235Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.284Z"
+  },
+  "activity_types": [
+    "natural_gas"
+  ]
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612155f"
+  },
+  "factor_id": "NATURAL_GAS_MJ",
+  "fuel_key": "natural_gas_mj",
+  "activity_type": "natural_gas_mj",
+  "name": "Natural Gas (MJ)",
+  "unit": "MJ",
+  "value": 0.0562,
+  "factor": 0.0562,
+  "notes": "Energy content measurement",
+  "description": "Natural Gas (MJ) emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.236Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.236Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121560"
+  },
+  "factor_id": "LIGNITE_COAL",
+  "fuel_key": "lignite_coal",
+  "activity_type": "lignite_coal",
+  "name": "Lignite Coal",
+  "unit": "kg",
+  "value": 1.0619,
+  "factor": 1.0619,
+  "notes": "",
+  "description": "Lignite Coal emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.237Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.237Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121561"
+  },
+  "factor_id": "HEAVY_FUEL_OIL_A",
+  "fuel_key": "heavy_fuel_oil_a",
+  "activity_type": "heavy_fuel_oil_a",
+  "name": "Heavy Fuel Oil A",
+  "unit": "litre",
+  "value": 3.22,
+  "factor": 3.22,
+  "notes": "Lower viscosity, lighter grade",
+  "description": "Heavy Fuel Oil A emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.238Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.238Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121562"
+  },
+  "factor_id": "HEAVY_FUEL_OIL_C",
+  "fuel_key": "heavy_fuel_oil_c",
+  "activity_type": "heavy_fuel_oil_c",
+  "name": "Heavy Fuel Oil C",
+  "unit": "litre",
+  "value": 3.2457,
+  "factor": 3.2457,
+  "notes": "Higher viscosity, heavier grade",
+  "description": "Heavy Fuel Oil C emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.239Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.239Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121563"
+  },
+  "factor_id": "GAS_DIESEL_OIL",
+  "fuel_key": "gas_diesel_oil",
+  "activity_type": "gas/diesel_oil",
+  "name": "Gas/Diesel Oil",
+  "unit": "litre",
+  "value": 2.7078,
+  "factor": 2.7078,
+  "notes": "",
+  "description": "Gas/Diesel Oil emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.240Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.282Z"
+  },
+  "activity_types": [
+    "diesel"
+  ]
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121564"
+  },
+  "factor_id": "ANTHRACITE_COAL",
+  "fuel_key": "anthracite_coal",
+  "activity_type": "anthracite_coal",
+  "name": "Anthracite Coal",
+  "unit": "kg",
+  "value": 3.1,
+  "factor": 3.1,
+  "notes": "",
+  "description": "Anthracite Coal emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.241Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.241Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121565"
+  },
+  "factor_id": "SUB_BITUMINOUS_COAL",
+  "fuel_key": "sub_bituminous_coal",
+  "activity_type": "sub_bituminous_coal",
+  "name": "Sub-bituminous Coal",
+  "unit": "kg",
+  "value": 2.5454,
+  "factor": 2.5454,
+  "notes": "",
+  "description": "Sub-bituminous Coal emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.241Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.241Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121566"
+  },
+  "factor_id": "JET_KEROSENE",
+  "fuel_key": "jet_kerosene",
+  "activity_type": "jet_kerosene",
+  "name": "Jet Kerosene",
+  "unit": "litre",
+  "value": 2.4775,
+  "factor": 2.4775,
+  "notes": "",
+  "description": "Jet Kerosene emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.242Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.242Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121567"
+  },
+  "factor_id": "LPG_LITRE",
+  "fuel_key": "lpg_litre",
+  "activity_type": "lpg_liquefied_petroleum_gas",
+  "name": "LPG (Liquefied Petroleum Gas)",
+  "unit": "litre",
+  "value": 1.6812,
+  "factor": 1.6812,
+  "notes": "",
+  "description": "LPG (Liquefied Petroleum Gas) emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.243Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.286Z"
+  },
+  "activity_types": [
+    "lpg"
+  ]
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121568"
+  },
+  "factor_id": "LPG_KG",
+  "fuel_key": "lpg_kg",
+  "activity_type": "lpg_liquefied_petroleum_gas",
+  "name": "LPG (Liquefied Petroleum Gas)",
+  "unit": "kg",
+  "value": 3.1134,
+  "factor": 3.1134,
+  "notes": "1 litre = 0.54 kg",
+  "description": "LPG (Liquefied Petroleum Gas) emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.244Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.244Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121569"
+  },
+  "factor_id": "MOTOR_GASOLINE",
+  "fuel_key": "motor_gasoline",
+  "activity_type": "motor_gasoline",
+  "name": "Motor Gasoline",
+  "unit": "litre",
+  "value": 2.1894,
+  "factor": 2.1894,
+  "notes": "",
+  "description": "Motor Gasoline emission factor",
+  "category": "Stationary Combustion - Fossil Fuels",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.245Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.284Z"
+  },
+  "activity_types": [
+    "gasoline"
+  ]
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612156a"
+  },
+  "factor_id": "FUEL_WOOD",
+  "fuel_key": "fuel_wood",
+  "activity_type": "fuel_wood",
+  "name": "Fuel Wood",
+  "unit": "kg",
+  "value": 0.0304,
+  "factor": 0.0304,
+  "notes": "Excludes biogenic CO₂",
+  "description": "Fuel Wood emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.245Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.245Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612156b"
+  },
+  "factor_id": "BAGASSE",
+  "fuel_key": "bagasse",
+  "activity_type": "bagasse",
+  "name": "Bagasse",
+  "unit": "kg",
+  "value": 0.0143,
+  "factor": 0.0143,
+  "notes": "Excludes biogenic CO₂",
+  "description": "Bagasse emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.246Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.246Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612156c"
+  },
+  "factor_id": "PALM_KERNEL_SHELL",
+  "fuel_key": "palm_kernel_shell",
+  "activity_type": "palm_kernel_shell",
+  "name": "Palm Kernel Shell",
+  "unit": "kg",
+  "value": 0.0352,
+  "factor": 0.0352,
+  "notes": "Excludes biogenic CO₂",
+  "description": "Palm Kernel Shell emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.246Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.246Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612156d"
+  },
+  "factor_id": "CORN_COB",
+  "fuel_key": "corn_cob",
+  "activity_type": "corn_cob",
+  "name": "Corn Cob",
+  "unit": "kg",
+  "value": 0.0319,
+  "factor": 0.0319,
+  "notes": "Excludes biogenic CO₂",
+  "description": "Corn Cob emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.247Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.247Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612156e"
+  },
+  "factor_id": "BIOGAS",
+  "fuel_key": "biogas",
+  "activity_type": "biogas",
+  "name": "Biogas",
+  "unit": "m³",
+  "value": 0.0011,
+  "factor": 0.0011,
+  "notes": "Excludes biogenic CO₂",
+  "description": "Biogas emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.248Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.248Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612156f"
+  },
+  "factor_id": "FUEL_WOOD_CO2",
+  "fuel_key": "fuel_wood_co2",
+  "activity_type": "fuel_wood_co₂_only",
+  "name": "Fuel Wood (CO₂ only)",
+  "unit": "kg",
+  "value": 1.7909,
+  "factor": 1.7909,
+  "notes": "Includes biogenic CO₂",
+  "description": "Fuel Wood (CO₂ only) emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.248Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.248Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121570"
+  },
+  "factor_id": "BAGASSE_CO2",
+  "fuel_key": "bagasse_co2",
+  "activity_type": "bagasse_co₂_only",
+  "name": "Bagasse (CO₂ only)",
+  "unit": "kg",
+  "value": 0.753,
+  "factor": 0.753,
+  "notes": "Includes biogenic CO₂",
+  "description": "Bagasse (CO₂ only) emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.249Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.249Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121571"
+  },
+  "factor_id": "PALM_KERNEL_SHELL_CO2",
+  "fuel_key": "palm_kernel_shell_co2",
+  "activity_type": "palm_kernel_shell_co₂_only",
+  "name": "Palm Kernel Shell (CO₂ only)",
+  "unit": "kg",
+  "value": 1.853,
+  "factor": 1.853,
+  "notes": "Includes biogenic CO₂",
+  "description": "Palm Kernel Shell (CO₂ only) emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.250Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.250Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121572"
+  },
+  "factor_id": "CORN_COB_CO2",
+  "fuel_key": "corn_cob_co2",
+  "activity_type": "corn_cob_co₂_only",
+  "name": "Corn Cob (CO₂ only)",
+  "unit": "kg",
+  "value": 1.678,
+  "factor": 1.678,
+  "notes": "Includes biogenic CO₂",
+  "description": "Corn Cob (CO₂ only) emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.251Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.251Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121573"
+  },
+  "factor_id": "BIOGAS_CO2",
+  "fuel_key": "biogas_co2",
+  "activity_type": "biogas_co₂_only",
+  "name": "Biogas (CO₂ only)",
+  "unit": "m³",
+  "value": 1.1428,
+  "factor": 1.1428,
+  "notes": "Includes biogenic CO₂",
+  "description": "Biogas (CO₂ only) emission factor",
+  "category": "Stationary Combustion - Biomass",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.251Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.251Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121574"
+  },
+  "factor_id": "MOTOR_GASOLINE_UNCONTROLLED",
+  "fuel_key": "motor_gasoline_uncontrolled",
+  "activity_type": "motor_gasoline___uncontrolled",
+  "name": "Motor Gasoline - Uncontrolled",
+  "unit": "litre",
+  "value": 2.2394,
+  "factor": 2.2394,
+  "notes": "",
+  "description": "Motor Gasoline - Uncontrolled emission factor",
+  "category": "Mobile Combustion - On Road Vehicles",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.252Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.288Z"
+  },
+  "activity_types": [
+    "transport"
+  ]
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121575"
+  },
+  "factor_id": "MOTOR_GASOLINE_CATALYST",
+  "fuel_key": "motor_gasoline_catalyst",
+  "activity_type": "motor_gasoline___oxidation_catalyst",
+  "name": "Motor Gasoline - Oxidation Catalyst",
+  "unit": "litre",
+  "value": 2.2719,
+  "factor": 2.2719,
+  "notes": "",
+  "description": "Motor Gasoline - Oxidation Catalyst emission factor",
+  "category": "Mobile Combustion - On Road Vehicles",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.253Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.253Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121576"
+  },
+  "factor_id": "MOTOR_GASOLINE_LOW_MILEAGE",
+  "fuel_key": "motor_gasoline_low_mileage",
+  "activity_type": "motor_gasoline___low_mileage_light_duty_1995+",
+  "name": "Motor Gasoline - Low Mileage Light Duty (1995+)",
+  "unit": "litre",
+  "value": 2.2327,
+  "factor": 2.2327,
+  "notes": "",
+  "description": "Motor Gasoline - Low Mileage Light Duty (1995+) emission factor",
+  "category": "Mobile Combustion - On Road Vehicles",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.253Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.253Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121577"
+  },
+  "factor_id": "GAS_DIESEL_OIL_MOBILE",
+  "fuel_key": "gas_diesel_oil_mobile",
+  "activity_type": "gas/diesel_oil",
+  "name": "Gas/Diesel Oil",
+  "unit": "litre",
+  "value": 2.7406,
+  "factor": 2.7406,
+  "notes": "",
+  "description": "Gas/Diesel Oil emission factor",
+  "category": "Mobile Combustion - On Road Vehicles",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.254Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.289Z"
+  },
+  "activity_types": [
+    "transport_diesel"
+  ]
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121578"
+  },
+  "factor_id": "CNG",
+  "fuel_key": "cng",
+  "activity_type": "compressed_natural_gas_cng",
+  "name": "Compressed Natural Gas (CNG)",
+  "unit": "kg",
+  "value": 2.2609,
+  "factor": 2.2609,
+  "notes": "",
+  "description": "Compressed Natural Gas (CNG) emission factor",
+  "category": "Mobile Combustion - On Road Vehicles",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.254Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.254Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121579"
+  },
+  "factor_id": "LPG_MOBILE_LITRE",
+  "fuel_key": "lpg_mobile_litre",
+  "activity_type": "lpg___mobile",
+  "name": "LPG - Mobile",
+  "unit": "litre",
+  "value": 1.7306,
+  "factor": 1.7306,
+  "notes": "",
+  "description": "LPG - Mobile emission factor",
+  "category": "Mobile Combustion - On Road Vehicles",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.255Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.255Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612157a"
+  },
+  "factor_id": "LPG_MOBILE_KG",
+  "fuel_key": "lpg_mobile_kg",
+  "activity_type": "lpg___mobile",
+  "name": "LPG - Mobile",
+  "unit": "kg",
+  "value": 3.2049,
+  "factor": 3.2049,
+  "notes": "1 litre = 0.54 kg",
+  "description": "LPG - Mobile emission factor",
+  "category": "Mobile Combustion - On Road Vehicles",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.255Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.255Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612157b"
+  },
+  "factor_id": "DIESEL_AGRICULTURE",
+  "fuel_key": "diesel_agriculture",
+  "activity_type": "agriculture_equipment",
+  "name": "Diesel - Agriculture Equipment",
+  "unit": "litre",
+  "value": 2.9793,
+  "factor": 2.9793,
+  "notes": "",
+  "description": "Agriculture Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Diesel)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.256Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.256Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612157c"
+  },
+  "factor_id": "DIESEL_FORESTRY",
+  "fuel_key": "diesel_forestry",
+  "activity_type": "forestry_equipment",
+  "name": "Diesel - Forestry Equipment",
+  "unit": "litre",
+  "value": 2.9793,
+  "factor": 2.9793,
+  "notes": "",
+  "description": "Forestry Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Diesel)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.257Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.257Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612157d"
+  },
+  "factor_id": "DIESEL_INDUSTRIAL",
+  "fuel_key": "diesel_industrial",
+  "activity_type": "industrial_equipment",
+  "name": "Diesel - Industrial Equipment",
+  "unit": "litre",
+  "value": 2.9793,
+  "factor": 2.9793,
+  "notes": "",
+  "description": "Industrial Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Diesel)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.257Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.257Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612157e"
+  },
+  "factor_id": "DIESEL_HOUSEHOLD",
+  "fuel_key": "diesel_household",
+  "activity_type": "household_equipment",
+  "name": "Diesel - Household Equipment",
+  "unit": "litre",
+  "value": 2.9793,
+  "factor": 2.9793,
+  "notes": "",
+  "description": "Household Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Diesel)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.258Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.258Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612157f"
+  },
+  "factor_id": "GASOLINE_4S_AGRICULTURE",
+  "fuel_key": "gasoline_4s_agriculture",
+  "activity_type": "agriculture_equipment",
+  "name": "Gasoline 4S - Agriculture Equipment",
+  "unit": "litre",
+  "value": 2.2738,
+  "factor": 2.2738,
+  "notes": "",
+  "description": "Agriculture Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Gasoline 4-Stroke)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.259Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.259Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121580"
+  },
+  "factor_id": "GASOLINE_4S_FORESTRY",
+  "fuel_key": "gasoline_4s_forestry",
+  "activity_type": "forestry_equipment",
+  "name": "Gasoline 4S - Forestry Equipment",
+  "unit": "litre",
+  "value": 2.1816,
+  "factor": 2.1816,
+  "notes": "",
+  "description": "Forestry Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Gasoline 4-Stroke)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.259Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.259Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121581"
+  },
+  "factor_id": "GASOLINE_4S_INDUSTRIAL",
+  "fuel_key": "gasoline_4s_industrial",
+  "activity_type": "industrial_equipment",
+  "name": "Gasoline 4S - Industrial Equipment",
+  "unit": "litre",
+  "value": 2.2455,
+  "factor": 2.2455,
+  "notes": "",
+  "description": "Industrial Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Gasoline 4-Stroke)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.259Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.259Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121582"
+  },
+  "factor_id": "GASOLINE_4S_HOUSEHOLD",
+  "fuel_key": "gasoline_4s_household",
+  "activity_type": "household_equipment",
+  "name": "Gasoline 4S - Household Equipment",
+  "unit": "litre",
+  "value": 2.3116,
+  "factor": 2.3116,
+  "notes": "",
+  "description": "Household Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Gasoline 4-Stroke)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.260Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.260Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121583"
+  },
+  "factor_id": "GASOLINE_2S_AGRICULTURE",
+  "fuel_key": "gasoline_2s_agriculture",
+  "activity_type": "agriculture_equipment",
+  "name": "Gasoline 2S - Agriculture Equipment",
+  "unit": "litre",
+  "value": 2.3171,
+  "factor": 2.3171,
+  "notes": "",
+  "description": "Agriculture Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Gasoline 2-Stroke)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.260Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.260Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121584"
+  },
+  "factor_id": "GASOLINE_2S_FORESTRY",
+  "fuel_key": "gasoline_2s_forestry",
+  "activity_type": "forestry_equipment",
+  "name": "Gasoline 2S - Forestry Equipment",
+  "unit": "litre",
+  "value": 2.3454,
+  "factor": 2.3454,
+  "notes": "",
+  "description": "Forestry Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Gasoline 2-Stroke)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.261Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.261Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121585"
+  },
+  "factor_id": "GASOLINE_2S_INDUSTRIAL",
+  "fuel_key": "gasoline_2s_industrial",
+  "activity_type": "industrial_equipment",
+  "name": "Gasoline 2S - Industrial Equipment",
+  "unit": "litre",
+  "value": 2.3077,
+  "factor": 2.3077,
+  "notes": "",
+  "description": "Industrial Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Gasoline 2-Stroke)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.262Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.262Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121586"
+  },
+  "factor_id": "GASOLINE_2S_HOUSEHOLD",
+  "fuel_key": "gasoline_2s_household",
+  "activity_type": "household_equipment",
+  "name": "Gasoline 2S - Household Equipment",
+  "unit": "litre",
+  "value": 2.3549,
+  "factor": 2.3549,
+  "notes": "",
+  "description": "Household Equipment emission factor",
+  "category": "Mobile Combustion - Off Road Equipment (Gasoline 2-Stroke)",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.263Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.263Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121587"
+  },
+  "factor_id": "R22",
+  "fuel_key": "r22",
+  "activity_type": "r_22_hcfc_22",
+  "name": "R-22 (HCFC-22)",
+  "unit": "kg",
+  "value": 1760,
+  "factor": 1760,
+  "notes": "GWP: 1,760",
+  "description": "R-22 (HCFC-22) emission factor",
+  "category": "Fugitive Emissions - Refrigerants",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.263Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.263Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121588"
+  },
+  "factor_id": "R32",
+  "fuel_key": "r32",
+  "activity_type": "r_32",
+  "name": "R-32",
+  "unit": "kg",
+  "value": 677,
+  "factor": 677,
+  "notes": "GWP: 677",
+  "description": "R-32 emission factor",
+  "category": "Fugitive Emissions - Refrigerants",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.264Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.264Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e6121589"
+  },
+  "factor_id": "R125",
+  "fuel_key": "r125",
+  "activity_type": "r_125",
+  "name": "R-125",
+  "unit": "kg",
+  "value": 3170,
+  "factor": 3170,
+  "notes": "GWP: 3,170",
+  "description": "R-125 emission factor",
+  "category": "Fugitive Emissions - Refrigerants",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.264Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.264Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612158a"
+  },
+  "factor_id": "R134",
+  "fuel_key": "r134",
+  "activity_type": "r_134",
+  "name": "R-134",
+  "unit": "kg",
+  "value": 1120,
+  "factor": 1120,
+  "notes": "GWP: 1,120",
+  "description": "R-134 emission factor",
+  "category": "Fugitive Emissions - Refrigerants",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.264Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.264Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612158b"
+  },
+  "factor_id": "R134A",
+  "fuel_key": "r134a",
+  "activity_type": "r_134a",
+  "name": "R-134a",
+  "unit": "kg",
+  "value": 1300,
+  "factor": 1300,
+  "notes": "GWP: 1,300",
+  "description": "R-134a emission factor",
+  "category": "Fugitive Emissions - Refrigerants",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.265Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.265Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612158c"
+  },
+  "factor_id": "R143",
+  "fuel_key": "r143",
+  "activity_type": "r_143",
+  "name": "R-143",
+  "unit": "kg",
+  "value": 328,
+  "factor": 328,
+  "notes": "GWP: 328",
+  "description": "R-143 emission factor",
+  "category": "Fugitive Emissions - Refrigerants",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.266Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.266Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612158d"
+  },
+  "factor_id": "R143A",
+  "fuel_key": "r143a",
+  "activity_type": "r_143a",
+  "name": "R-143a",
+  "unit": "kg",
+  "value": 4800,
+  "factor": 4800,
+  "notes": "GWP: 4,800",
+  "description": "R-143a emission factor",
+  "category": "Fugitive Emissions - Refrigerants",
+  "scope": 1,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.267Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.267Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68db6826c478e541e612158e"
+  },
+  "factor_id": "GRID_ELECTRICITY",
+  "fuel_key": "grid_electricity",
+  "activity_type": "grid_mix_electricity_thailand",
+  "name": "Grid Mix Electricity (Thailand)",
+  "unit": "kWh",
+  "value": 0.4999,
+  "factor": 0.4999,
+  "notes": "Based on 2016-2018 Thai grid mix",
+  "description": "Grid Mix Electricity (Thailand) emission factor",
+  "category": "Purchased Electricity",
+  "scope": 2,
+  "source": "TGO Thailand",
+  "source_date": "April 2022",
+  "created_at": {
+    "$date": "2025-09-30T05:18:30.267Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-30T05:18:30.281Z"
+  },
+  "activity_types": [
+    "electricity"
+  ]
+}]

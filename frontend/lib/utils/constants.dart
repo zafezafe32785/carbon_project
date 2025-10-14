@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 class Constants {
-  // API Configuration - IMPORTANT: Update this based on where you run
-  // For Web/Chrome on same machine as backend:
-  static const String baseUrl = 'http://localhost:5000';
-  
+  // API Configuration - Works in both development and production
+  // In production (deployed), uses relative URL which goes through Nginx
+  // In development, change to 'http://localhost:5000' if running locally
+  static const String baseUrl = '';  // Empty = relative URLs (production)
+
   // API Endpoints
-  static const String apiUrl = '$baseUrl/api';
+  static const String apiUrl = '/api';  // Relative URL goes through Nginx proxy
   
   // App Colors
   static const Color primaryColor = Color(0xFF2E7D32); // Green

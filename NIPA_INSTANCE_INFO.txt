@@ -1,0 +1,32 @@
+NIPA Cloud Instance Information
+================================
+
+Instance Name: carbonecho
+Instance ID: cb4ded...
+Availability Zone: NCP-NON
+
+Server Details:
+--------------
+Operating System: Ubuntu 22.04
+Machine Type: csa.largev2
+Internal IP: 192.168.1.3
+External IP: 103.29.190.75
+
+SSH Connection:
+--------------
+Username: nc-user
+Password: [the password you created during setup]
+SSH Command: ssh nc-user@103.29.190.75
+
+Web Access:
+-----------
+Once deployed, your app will be available at:
+http://103.29.190.75
+
+Notes:
+------
+- Wait 2-5 minutes for instance to become HEALTHY
+- Make sure Security Group has ports 80, 443 open
+- Save your password securely!
+
+Created: 2025-10-13

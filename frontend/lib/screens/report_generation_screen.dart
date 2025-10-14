@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
 import '../services/api_service.dart';
 import '../utils/constants.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ReportGenerationScreen extends StatefulWidget {
   const ReportGenerationScreen({Key? key}) : super(key: key);
@@ -360,7 +362,7 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
   Future<void> _performDownload(String fileUrl, String fileName) async {
     try {
       _showInfoSnackBar('Starting download...');
-      
+
       final token = await ApiService.getToken();
       final response = await http.get(
         Uri.parse(fileUrl),
@@ -370,13 +372,34 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
       );
 
       if (response.statusCode == 200) {
-        // For web/mobile platforms, you would typically use packages like:
-        // - flutter_downloader for mobile
-        // - html package for web
-        // - path_provider for getting download directory
-        
-        // For now, we'll show success and provide instructions
-        _showDownloadSuccessDialog(fileName, response.bodyBytes.length);
+        // Get the Downloads directory
+        Directory? downloadsDirectory;
+
+        if (Platform.isAndroid) {
+          downloadsDirectory = Directory('/storage/emulated/0/Download');
+          if (!await downloadsDirectory.exists()) {
+            downloadsDirectory = await getExternalStorageDirectory();
+          }
+        } else if (Platform.isIOS) {
+          downloadsDirectory = await getApplicationDocumentsDirectory();
+        } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+          downloadsDirectory = await getDownloadsDirectory();
+        }
+
+        if (downloadsDirectory == null) {
+          _showErrorSnackBar('Could not access downloads directory');
+          return;
+        }
+
+        // Create the file path
+        final filePath = '${downloadsDirectory.path}/$fileName';
+        final file = File(filePath);
+
+        // Write the file
+        await file.writeAsBytes(response.bodyBytes);
+
+        // Show success dialog with file path
+        _showDownloadSuccessDialog(fileName, response.bodyBytes.length, filePath);
       } else {
         _showErrorSnackBar('Download failed: Server returned ${response.statusCode}');
       }
@@ -385,9 +408,9 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
     }
   }
 
-  void _showDownloadSuccessDialog(String fileName, int fileSize) {
+  void _showDownloadSuccessDialog(String fileName, int fileSize, String filePath) {
     final fileSizeKB = (fileSize / 1024).toStringAsFixed(1);
-    
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -405,7 +428,7 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
             children: [
               Text('File: $fileName'),
               const SizedBox(height: 4),
-              Text('Size: ${fileSizeKB} KB'),
+              Text('Size: $fileSizeKB KB'),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -414,10 +437,10 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
                   border: Border.all(color: Colors.green.shade200),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Column(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
                         Icon(Icons.folder, color: Colors.green, size: 20),
                         SizedBox(width: 8),
@@ -430,10 +453,10 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
                         ),
                       ],
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 4),
                     Text(
-                      'The report has been downloaded to your device\'s Downloads folder.',
-                      style: TextStyle(fontSize: 12, color: Colors.green),
+                      filePath,
+                      style: const TextStyle(fontSize: 11, color: Colors.green),
                     ),
                   ],
                 ),

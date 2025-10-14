@@ -275,16 +275,18 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Later'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
-              ).then((_) => _loadDashboardData()); // Reload after adding
-            },
-            child: const Text('Add Now'),
-          ),
+          // Show "Add Now" button only for NON-admin users
+          if (_dashboardData['is_admin'] != true)
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+                ).then((_) => _loadDashboardData()); // Reload after adding
+              },
+              child: const Text('Add Now'),
+            ),
         ],
       ),
     );
@@ -345,7 +347,8 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                         ),
                       ),
                     ),
-          floatingActionButton: _buildModernFAB(),
+          // Show FAB only for NON-admin users
+          floatingActionButton: _dashboardData['is_admin'] != true ? _buildModernFAB() : null,
         );
       },
     );
@@ -524,20 +527,22 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                 style: TextStyle(color: Colors.grey[500]),
               ),
               const SizedBox(height: 30),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
-                  ).then((_) => _loadDashboardData());
-                },
-                icon: const Icon(Icons.add),
-                label: Text(localization.addFirstEmission),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[700],
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+              // Show "Add First Emission" button only for NON-admin users
+              if (_dashboardData['is_admin'] != true)
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+                    ).then((_) => _loadDashboardData());
+                  },
+                  icon: const Icon(Icons.add),
+                  label: Text(localization.addFirstEmission),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green[700],
+                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                  ),
                 ),
-              ),
             ],
           ),
         );
@@ -1483,7 +1488,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                   PieChartSectionData(
                     value: scope1Total,
                     title: '${(scope1Total / total * 100).toStringAsFixed(1)}%',
-                    color: const Color(0xFFEF4444),
+                    color: const Color(0xFF059669), // Green for Scope 1
                     radius: 60,
                     titleStyle: const TextStyle(
                       fontSize: 14,
@@ -1494,7 +1499,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                   PieChartSectionData(
                     value: scope2Total,
                     title: '${(scope2Total / total * 100).toStringAsFixed(1)}%',
-                    color: const Color(0xFF3B82F6),
+                    color: const Color(0xFF3B82F6), // Blue for Scope 2
                     radius: 60,
                     titleStyle: const TextStyle(
                       fontSize: 14,
@@ -1516,7 +1521,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                   'Scope 1',
                   scope1Total,
                   total,
-                  const Color(0xFFEF4444),
+                  const Color(0xFF059669), // Green for Scope 1
                 ),
                 const SizedBox(height: 16),
                 _buildDonutLegendItem(
@@ -1738,15 +1743,15 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
               barRods: [
                 BarChartRodData(
                   toY: scope1Total,
-                  color: const Color(0xFFEF4444),
+                  color: const Color(0xFF059669), // Green for Scope 1
                   width: 60,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(8),
                   ),
                   gradient: LinearGradient(
                     colors: [
-                      const Color(0xFFEF4444),
-                      const Color(0xFFEF4444).withOpacity(0.7),
+                      const Color(0xFF059669), // Green for Scope 1
+                      const Color(0xFF059669).withOpacity(0.7),
                     ],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
@@ -1942,28 +1947,31 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                   isSelected: true,
                   onTap: () => Navigator.pop(context),
                 ),
-                _buildDrawerItem(
-                  icon: Icons.add_circle_rounded,
-                  title: localization.addEmission,
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
-                    ).then((_) => _loadDashboardData());
-                  },
-                ),
-                _buildDrawerItem(
-                  icon: Icons.upload_file_rounded,
-                  title: localization.uploadData,
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => UploadDataScreen()),
-                    ).then((_) => _loadDashboardData());
-                  },
-                ),
+                // Show add emission and upload data only for NON-admin users
+                if (_dashboardData['is_admin'] != true)
+                  _buildDrawerItem(
+                    icon: Icons.add_circle_rounded,
+                    title: localization.addEmission,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+                      ).then((_) => _loadDashboardData());
+                    },
+                  ),
+                if (_dashboardData['is_admin'] != true)
+                  _buildDrawerItem(
+                    icon: Icons.upload_file_rounded,
+                    title: localization.uploadData,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => UploadDataScreen()),
+                      ).then((_) => _loadDashboardData());
+                    },
+                  ),
                 _buildDrawerItem(
                   icon: Icons.assessment_rounded,
                   title: localization.generateReport,
@@ -2313,13 +2321,13 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
     final currentMonth = _dashboardData['current_month_total'] ?? 0;
     final monthChange = _dashboardData['month_change_percentage'] ?? 0;
     final currentYear = _dashboardData['current_year_total'] ?? 0;
-    
-    // Calculate scope totals for current month
-    final categoryData = _dashboardData['category_breakdown'] as Map? ?? {};
+
+    // Calculate scope totals for CURRENT MONTH using current_month_category_breakdown
+    final monthCategoryData = _dashboardData['current_month_category_breakdown'] as Map? ?? {};
     double scope1Month = 0.0;
     double scope2Month = 0.0;
 
-    for (final entry in categoryData.entries) {
+    for (final entry in monthCategoryData.entries) {
       final categoryName = entry.key.toString().toLowerCase();
       final value = safeToDouble(entry.value);
 
@@ -2340,11 +2348,37 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
         }
       }
     }
-    
-    // Calculate scope totals for current year
-    // We'll need to get this from yearly data if available, otherwise estimate from monthly
-    final yearlyScope1 = _dashboardData['scope1_year_total'] ?? scope1Month;
-    final yearlyScope2 = _dashboardData['scope2_year_total'] ?? scope2Month;
+
+    // Calculate scope totals for CURRENT YEAR using category_breakdown (yearly data)
+    final yearCategoryData = _dashboardData['category_breakdown'] as Map? ?? {};
+    double scope1Year = 0.0;
+    double scope2Year = 0.0;
+
+    for (final entry in yearCategoryData.entries) {
+      final categoryName = entry.key.toString().toLowerCase();
+      final value = safeToDouble(entry.value);
+
+      final scope = Constants.getCategoryScope(categoryName);
+      if (scope == 1) {
+        scope1Year += value;
+      } else if (scope == 2) {
+        scope2Year += value;
+      } else {
+        // Fallback to keyword matching for unmapped categories
+        if (_containsScope1Keywords(categoryName)) {
+          scope1Year += value;
+        } else if (_containsScope2Keywords(categoryName)) {
+          scope2Year += value;
+        } else {
+          // Default to Scope 1 for unknown categories
+          scope1Year += value;
+        }
+      }
+    }
+
+    // Use calculated year totals (not fallback to monthly)
+    final yearlyScope1 = scope1Year;
+    final yearlyScope2 = scope2Year;
     
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -3126,34 +3160,40 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(
-                child: _buildActionButton(
-                  title: 'Add Data',
-                  icon: Icons.add_rounded,
-                  color: const Color(0xFF059669),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
-                    ).then((_) => _loadDashboardData());
-                  },
+              // Show "Add Data" button only for NON-admin users
+              if (_dashboardData['is_admin'] != true) ...[
+                Expanded(
+                  child: _buildActionButton(
+                    title: 'Add Data',
+                    icon: Icons.add_rounded,
+                    color: const Color(0xFF059669),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AddEmissionScreen()),
+                      ).then((_) => _loadDashboardData());
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildActionButton(
-                  title: 'Upload',
-                  icon: Icons.upload_rounded,
-                  color: const Color(0xFF3B82F6),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => UploadDataScreen()),
-                    ).then((_) => _loadDashboardData());
-                  },
+                const SizedBox(width: 12),
+              ],
+              // Show "Upload" button only for NON-admin users
+              if (_dashboardData['is_admin'] != true) ...[
+                Expanded(
+                  child: _buildActionButton(
+                    title: 'Upload',
+                    icon: Icons.upload_rounded,
+                    color: const Color(0xFF3B82F6),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => UploadDataScreen()),
+                      ).then((_) => _loadDashboardData());
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
+              ],
               Expanded(
                 child: _buildActionButton(
                   title: 'Reports',
