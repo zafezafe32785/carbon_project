@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'dart:io';
 import '../services/api_service.dart';
 import '../utils/constants.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:universal_html/html.dart' as html;
 
 class ReportGenerationScreen extends StatefulWidget {
   const ReportGenerationScreen({Key? key}) : super(key: key);
@@ -364,42 +363,34 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
       _showInfoSnackBar('Starting download...');
 
       final token = await ApiService.getToken();
+
+      // Build the full URL - handle relative URLs for web deployment
+      final Uri downloadUri;
+      if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+        // Absolute URL
+        downloadUri = Uri.parse(fileUrl);
+      } else {
+        // Relative URL - construct from current window location
+        final currentUri = Uri.base;
+        downloadUri = currentUri.replace(path: fileUrl);
+      }
+
       final response = await http.get(
-        Uri.parse(fileUrl),
+        downloadUri,
         headers: {
           'Authorization': 'Bearer $token',
         },
       );
 
       if (response.statusCode == 200) {
-        // Get the Downloads directory
-        Directory? downloadsDirectory;
-
-        if (Platform.isAndroid) {
-          downloadsDirectory = Directory('/storage/emulated/0/Download');
-          if (!await downloadsDirectory.exists()) {
-            downloadsDirectory = await getExternalStorageDirectory();
-          }
-        } else if (Platform.isIOS) {
-          downloadsDirectory = await getApplicationDocumentsDirectory();
-        } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-          downloadsDirectory = await getDownloadsDirectory();
+        if (kIsWeb) {
+          // Web platform: Use browser's download mechanism
+          _downloadForWeb(response.bodyBytes, fileName);
+          _showSuccessSnackBar('Download started! Check your browser downloads.');
+        } else {
+          // This shouldn't happen in web deployment, but kept for safety
+          _showErrorSnackBar('Non-web platforms not supported in this build');
         }
-
-        if (downloadsDirectory == null) {
-          _showErrorSnackBar('Could not access downloads directory');
-          return;
-        }
-
-        // Create the file path
-        final filePath = '${downloadsDirectory.path}/$fileName';
-        final file = File(filePath);
-
-        // Write the file
-        await file.writeAsBytes(response.bodyBytes);
-
-        // Show success dialog with file path
-        _showDownloadSuccessDialog(fileName, response.bodyBytes.length, filePath);
       } else {
         _showErrorSnackBar('Download failed: Server returned ${response.statusCode}');
       }
@@ -408,74 +399,29 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
     }
   }
 
-  void _showDownloadSuccessDialog(String fileName, int fileSize, String filePath) {
-    final fileSizeKB = (fileSize / 1024).toStringAsFixed(1);
+  // Web-specific download using Blob and anchor element
+  void _downloadForWeb(List<int> bytes, String fileName) {
+    // Determine MIME type based on file extension
+    String mimeType = 'application/octet-stream';
+    if (fileName.endsWith('.pdf')) {
+      mimeType = 'application/pdf';
+    } else if (fileName.endsWith('.docx')) {
+      mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (fileName.endsWith('.xlsx')) {
+      mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
 
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Download Complete'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('File: $fileName'),
-              const SizedBox(height: 4),
-              Text('Size: $fileSizeKB KB'),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  border: Border.all(color: Colors.green.shade200),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.folder, color: Colors.green, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'File Location',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      filePath,
-                      style: const TextStyle(fontSize: 11, color: Colors.green),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
+    // Create blob from bytes
+    final blob = html.Blob([bytes], mimeType);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+
+    // Create anchor element and trigger download
+    html.AnchorElement(href: url)
+      ..setAttribute('download', fileName)
+      ..click();
+
+    // Clean up
+    html.Url.revokeObjectUrl(url);
   }
 
   void _showSuccessSnackBar(String message) {

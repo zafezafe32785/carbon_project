@@ -1689,8 +1689,46 @@ class CarbonReportGenerator:
             except Exception as e:
                 print(f"⚠ win32com conversion failed: {str(e)}")
 
-            # If both methods failed, raise exception instead of using bad fallback
-            raise Exception("All Word-to-PDF conversion methods failed")
+            # Method 3: Try using LibreOffice (Linux/Mac compatible)
+            try:
+                print("Attempting conversion with LibreOffice...")
+                import subprocess
+                import platform
+
+                # Use libreoffice command-line conversion
+                # Works on Linux, Mac, and Windows (if LibreOffice is installed)
+                result = subprocess.run([
+                    'libreoffice',
+                    '--headless',
+                    '--convert-to', 'pdf',
+                    '--outdir', os.path.dirname(pdf_filepath_abs),
+                    word_filepath_abs
+                ], capture_output=True, text=True, timeout=60)
+
+                if result.returncode == 0 and os.path.exists(pdf_filepath_abs):
+                    print(f"✓ Successfully converted Word to PDF using LibreOffice")
+                    print(f"  PDF size: {os.path.getsize(pdf_filepath_abs)} bytes")
+
+                    # Clean up temporary Word file
+                    try:
+                        os.remove(word_filepath_abs)
+                        print(f"✓ Cleaned up temporary Word file")
+                    except Exception as cleanup_error:
+                        print(f"⚠ Could not remove temp file: {cleanup_error}")
+
+                    return pdf_filepath
+                else:
+                    raise Exception(f"LibreOffice conversion failed: {result.stderr}")
+
+            except FileNotFoundError:
+                print("⚠ LibreOffice not found on system")
+            except subprocess.TimeoutExpired:
+                print("⚠ LibreOffice conversion timed out")
+            except Exception as e:
+                print(f"⚠ LibreOffice conversion failed: {str(e)}")
+
+            # If all methods failed, raise exception
+            raise Exception("All Word-to-PDF conversion methods failed (tried: docx2pdf, win32com, LibreOffice)")
 
         except Exception as e:
             print(f"✗ Word-to-PDF conversion failed: {str(e)}")
