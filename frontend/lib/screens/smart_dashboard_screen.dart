@@ -38,8 +38,12 @@ class SmartDashboardScreen extends StatefulWidget {
 class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   Map<String, dynamic> _dashboardData = {};
   bool _isLoading = true;
-  double _monthlyTarget = 5000; // Default target
+  double _yearlyTarget = 60000; // Default yearly target
   String _selectedScope = 'All'; // For bar chart filtering
+  bool _alertDismissed = false; // Track if emission spike alert is dismissed
+
+  // Computed monthly target from yearly
+  double get _monthlyTarget => _yearlyTarget / 12;
 
   // Chart visualization preferences
   String _trendChartType = 'line'; // line, bar, area
@@ -228,19 +232,12 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Dismiss'),
-          ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Could navigate to detailed analysis or add emission screen
-            },
+            onPressed: () => Navigator.pop(context),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
+              backgroundColor: Colors.grey,
             ),
-            child: const Text('View Details'),
+            child: const Text('Dismiss'),
           ),
         ],
       ),
@@ -322,7 +319,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                               _buildModernAlertCard(),
 
                             // Alert for category increases
-                            if (_detectCategoryIncreases(threshold: 50.0).isNotEmpty)
+                            if (!_alertDismissed && _detectCategoryIncreases(threshold: 50.0).isNotEmpty)
                               _buildCategoryIncreaseCard(),
 
                             // Quick Stats Grid
@@ -962,7 +959,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                           color: Colors.green[700]!.withOpacity(0.1),
                         ),
                       ),
-                    if (hasLastYearData)
+                    if (hasLastYearData && _showComparison)
                       LineChartBarData(
                         spots: lastYearData.asMap().entries.map((entry) {
                           return FlSpot(
@@ -1857,12 +1854,18 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   // Modern UI Components
   PreferredSizeWidget _buildModernAppBar(LocalizationService localization) {
     return AppBar(
-      title: Text(
-        localization.isThaiLanguage ? 'แดชบอร์ดคาร์บอน' : 'Carbon Dashboard',
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 20,
-        ),
+      title: Row(
+        children: [
+          const Icon(Icons.eco_rounded, size: 28),
+          const SizedBox(width: 12),
+          Text(
+            localization.isThaiLanguage ? 'แดชบอร์ดคาร์บอน' : 'Carbon Accounting',
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 20,
+            ),
+          ),
+        ],
       ),
       backgroundColor: const Color(0xFF059669),
       foregroundColor: Colors.white,
@@ -2014,7 +2017,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                 const Divider(height: 32),
                 _buildDrawerItem(
                   icon: Icons.settings_rounded,
-                  title: localization.isThaiLanguage ? 'เป้าหมายรายเดือน' : 'Monthly target',
+                  title: localization.isThaiLanguage ? 'เป้าหมายรายเดือน' : 'Yearly Target',
                   onTap: () {
                     Navigator.pop(context);
                     _showTargetSettings();
@@ -2265,54 +2268,61 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.orange[200]!),
       ),
-      child: InkWell(
-        onTap: _showCategoryWarnings,
-        borderRadius: BorderRadius.circular(16),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(Icons.trending_up_rounded, color: Colors.orange[700], size: 24),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange[100],
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Emission Spike Detected!',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange[700],
-                      fontSize: 16,
-                    ),
+            child: Icon(Icons.trending_up_rounded, color: Colors.orange[700], size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Emission Spike Detected!',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange[700],
+                    fontSize: 16,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$category increased by $percentage% vs last month',
+                  style: TextStyle(color: Colors.orange[600]),
+                ),
+                if (warnings.length > 1) ...[
                   const SizedBox(height: 4),
                   Text(
-                    '$category increased by $percentage% vs last month',
-                    style: TextStyle(color: Colors.orange[600]),
-                  ),
-                  if (warnings.length > 1) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      '+${warnings.length - 1} more ${warnings.length - 1 == 1 ? 'category' : 'categories'}',
-                      style: TextStyle(
-                        color: Colors.orange[500],
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                      ),
+                    '+${warnings.length - 1} more ${warnings.length - 1 == 1 ? 'category' : 'categories'}',
+                    style: TextStyle(
+                      color: Colors.orange[500],
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
                     ),
-                  ],
+                  ),
                 ],
-              ),
+              ],
             ),
-            Icon(Icons.arrow_forward_ios, color: Colors.orange[600], size: 16),
-          ],
-        ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _alertDismissed = true;
+              });
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.orange[700],
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+            child: const Text('Dismiss'),
+          ),
+        ],
       ),
     );
   }
@@ -2385,7 +2395,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
       child: Row(
         children: [
           _buildModernStatCard(
-            title: 'This Month',
+            title: 'Total Carbon Emission this month',
             value: '${currentMonth.toStringAsFixed(0)}',
             unit: 'kg CO₂',
             icon: Icons.calendar_month_rounded,
@@ -2394,7 +2404,7 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
           ),
           const SizedBox(width: 12),
           _buildModernStatCard(
-            title: 'Target Progress',
+            title: '% Target (Monthly)',
             value: '${(currentMonth / _monthlyTarget * 100).toStringAsFixed(0)}',
             unit: '%',
             icon: Icons.track_changes_rounded,
@@ -3393,6 +3403,10 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
+            rodStackItems: [],
+            backDrawRodData: BackgroundBarChartRodData(
+              show: false,
+            ),
           ),
         );
       }
@@ -3414,6 +3428,10 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
               ],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
+            ),
+            rodStackItems: [],
+            backDrawRodData: BackgroundBarChartRodData(
+              show: false,
             ),
           ),
         );
@@ -3551,6 +3569,27 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                     },
                   ),
                 ),
+                extraLinesData: ExtraLinesData(
+                  horizontalLines: [
+                    HorizontalLine(
+                      y: _monthlyTarget,
+                      color: Colors.red.withOpacity(0.6),
+                      strokeWidth: 2,
+                      dashArray: [8, 4],
+                      label: HorizontalLineLabel(
+                        show: true,
+                        alignment: Alignment.topRight,
+                        padding: const EdgeInsets.only(right: 5, bottom: 5),
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                        labelResolver: (line) => 'Target: ${_monthlyTarget.toStringAsFixed(0)}',
+                      ),
+                    ),
+                  ],
+                ),
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
@@ -3585,15 +3624,16 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
+                      reservedSize: 40,
                       getTitlesWidget: (value, meta) {
-                        // Use first letter of month labels for bar chart
-                        final monthAbbreviations = monthLabels.map((m) => m[0]).toList();
-                        if (value.toInt() >= 0 && value.toInt() < monthAbbreviations.length) {
+                        // Show full month names instead of single letters
+                        if (value.toInt() >= 0 && value.toInt() < monthLabels.length) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              monthAbbreviations[value.toInt()],
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                              monthLabels[value.toInt()],
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
+                              textAlign: TextAlign.center,
                             ),
                           );
                         }
@@ -3952,8 +3992,8 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
   }
 
   void _showTargetSettings() {
-    final controller = TextEditingController(text: _monthlyTarget.toString());
-    
+    final controller = TextEditingController(text: _yearlyTarget.toStringAsFixed(0));
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -3962,22 +4002,29 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
           children: [
             Icon(Icons.track_changes_rounded, color: Color(0xFF059669)),
             SizedBox(width: 8),
-            Text('Set Monthly Target'),
+            Text('Set Yearly Target'),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Current target: ${_monthlyTarget.toStringAsFixed(0)} kg CO₂',
+              'Current yearly target: ${_yearlyTarget.toStringAsFixed(0)} kg CO₂',
               style: TextStyle(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Monthly target: ${_monthlyTarget.toStringAsFixed(0)} kg CO₂',
+              style: TextStyle(color: Colors.grey[500], fontSize: 13),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                labelText: 'New Target (kg CO₂)',
+                labelText: 'New Yearly Target (kg CO₂)',
+                helperText: 'Will be divided by 12 for monthly target',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -3993,15 +4040,15 @@ class _SmartDashboardScreenState extends State<SmartDashboardScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              final newTarget = double.tryParse(controller.text);
-              if (newTarget != null && newTarget > 0) {
+              final newYearlyTarget = double.tryParse(controller.text);
+              if (newYearlyTarget != null && newYearlyTarget > 0) {
                 setState(() {
-                  _monthlyTarget = newTarget;
+                  _yearlyTarget = newYearlyTarget;
                 });
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Target updated to ${_monthlyTarget.toStringAsFixed(0)} kg'),
+                    content: Text('Yearly target: ${_yearlyTarget.toStringAsFixed(0)} kg | Monthly: ${_monthlyTarget.toStringAsFixed(0)} kg'),
                     backgroundColor: const Color(0xFF059669),
                   ),
                 );
